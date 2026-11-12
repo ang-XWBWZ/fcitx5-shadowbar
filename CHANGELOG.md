@@ -2,6 +2,12 @@
 
 All notable changes to **fcitx5-shadowbar** are documented in this file.
 
+## [0.1.2] - 2026-11-12
+
+### Bug Fixes
+
+- **Floating UI Startup Crash (`SIGSEGV`)**: Added a re-entrancy guard (`applying_`) and redundant-write checks to `OpaquePopupEventFilter` in `floating-ui/ui_util.hpp`, fixing an infinite `QEvent::StyleChange` -> `setStyleSheet()` recursion loop when opening `shadowbar-float` on Qt6/Wayland.
+
 ## [0.1.1] - 2026-11-12
 
 ### Popup Performance, Modernized Card Layout & System Theme Polish

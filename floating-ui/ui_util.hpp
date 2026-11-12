@@ -29,17 +29,29 @@ public:
         applyNow();
     }
 
-    void applyNow() const {
-        if (!view_) {
+    void applyNow() {
+        if (!view_ || applying_) {
             return;
         }
+        struct ReentryGuard {
+            bool &flag;
+            explicit ReentryGuard(bool &f) : flag(f) { flag = true; }
+            ~ReentryGuard() { flag = false; }
+        } guard(applying_);
+
         auto enforce_widget = [this](QWidget *w) {
             if (!w) {
                 return;
             }
-            w->setAttribute(Qt::WA_TranslucentBackground, false);
-            w->setAttribute(Qt::WA_NoSystemBackground, false);
-            w->setAutoFillBackground(true);
+            if (w->testAttribute(Qt::WA_TranslucentBackground)) {
+                w->setAttribute(Qt::WA_TranslucentBackground, false);
+            }
+            if (w->testAttribute(Qt::WA_NoSystemBackground)) {
+                w->setAttribute(Qt::WA_NoSystemBackground, false);
+            }
+            if (!w->autoFillBackground()) {
+                w->setAutoFillBackground(true);
+            }
             w->setPalette(palette_);
         };
         enforce_widget(view_);
@@ -50,8 +62,11 @@ public:
                 (popup_win->windowFlags().testFlag(Qt::Popup) ||
                  host_win != nullptr)) {
                 enforce_widget(popup_win);
-                popup_win->setAttribute(Qt::WA_StyledBackground, true);
-                if (!container_qss_.isEmpty()) {
+                if (!popup_win->testAttribute(Qt::WA_StyledBackground)) {
+                    popup_win->setAttribute(Qt::WA_StyledBackground, true);
+                }
+                if (!container_qss_.isEmpty() &&
+                    popup_win->styleSheet() != container_qss_) {
                     popup_win->setStyleSheet(container_qss_);
                 }
             }
@@ -60,7 +75,7 @@ public:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override {
-        if (event &&
+        if (!applying_ && event &&
             (event->type() == QEvent::Show ||
              event->type() == QEvent::Polish ||
              event->type() == QEvent::StyleChange)) {
@@ -74,6 +89,7 @@ private:
     QPointer<QAbstractItemView> view_;
     QPalette palette_;
     QString container_qss_;
+    bool applying_ = false;
 };
 
 } // namespace detail

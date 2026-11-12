@@ -1,3 +1,11 @@
+fcitx5-shadowbar (0.1.2-1) unstable; urgency=medium
+
+  * Fix crash on startup in Qt6 floating UI (`OpaquePopupEventFilter`):
+    - Add re-entrancy guard and skip redundant stylesheet/attribute updates to
+      prevent infinite `QEvent::StyleChange` recursion (`SIGSEGV`).
+
+ -- ang <ang-XWBWZ@users.noreply.github.com>  Thu, 12 Nov 2026 03:05:00 -0500
+
 fcitx5-shadowbar (0.1.1-1) unstable; urgency=medium
 
   * Popup-only clipboard monitoring & local model idle auto-unload:
