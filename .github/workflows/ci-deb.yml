@@ -1,0 +1,78 @@
+name: Build, Test, and Debian Package
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test-deb:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu-24.04
+            image: ubuntu:24.04
+            artifact_suffix: ubuntu24.04
+          - distro: debian-bookworm
+            image: debian:bookworm
+            artifact_suffix: debian12
+          - distro: debian-trixie
+            image: debian:trixie
+            artifact_suffix: debian13
+    container:
+      image: ${{ matrix.image }}
+
+    steps:
+      - name: Install build & packaging dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            git \
+            cmake \
+            g++ \
+            pkgconf \
+            debhelper \
+            dpkg-dev \
+            libfcitx5core-dev \
+            libfcitx5config-dev \
+            libfcitx5utils-dev \
+            fcitx5-modules-dev \
+            fcitx5 \
+            libcurl4-openssl-dev \
+            nlohmann-json3-dev \
+            qt6-base-dev \
+            libsqlite3-dev \
+            zlib1g-dev
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure and build (with tests)
+        run: |
+          cmake -S . -B build -DBUILD_TESTS=ON
+          cmake --build build -j
+
+      - name: Run CTest suite
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Build standard .deb package
+        run: |
+          rm -rf build
+          dpkg-buildpackage -us -uc -b
+          mkdir -p dist
+          mv ../fcitx5-shadowbar_*.deb dist/
+          ls -lh dist/
+          dpkg-deb -I dist/fcitx5-shadowbar_*.deb
+          dpkg-deb -c dist/fcitx5-shadowbar_*.deb
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fcitx5-shadowbar-${{ matrix.artifact_suffix }}
+          path: dist/*.deb

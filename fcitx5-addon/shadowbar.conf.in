@@ -1,0 +1,14 @@
+[Addon]
+Name=ShadowBar Translator
+Name[zh_CN]=ShadowBar 伴随式实时翻译
+Comment=Gboard-style inline floating translation bar for Fcitx5
+Comment[zh_CN]=类似 Gboard 的伴随式实时翻译输入条
+Type=SharedLibrary
+Library=libshadowbar
+Category=Module
+Version=@PROJECT_VERSION@
+OnDemand=False
+Configurable=True
+
+[Addon/Dependencies]
+0=core:5.0.20

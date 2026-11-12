@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage & Setup Questions (Discussions)
+    url: https://github.com/ang-XWBWZ/fcitx5-shadowbar/discussions
+    about: Ask installation, Fcitx5 integration, or dictionary/model configuration questions here.
+  - name: Installation Guides
+    url: https://github.com/ang-XWBWZ/fcitx5-shadowbar/blob/main/docs/INSTALL.md
+    about: Check the English / Chinese installation guide before filing setup bugs.

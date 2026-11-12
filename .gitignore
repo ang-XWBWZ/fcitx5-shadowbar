@@ -1,0 +1,62 @@
+# Build directories
+build/
+build-*/
+out/
+dist/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+.cache/
+.clangd/
+.clang-tidy
+
+# CPack / Debian packaging artifacts
+_CPack_Packages/
+*.deb
+*.ddeb
+*.changes
+*.buildinfo
+*.tar.gz
+*.tar.xz
+*.tar.zst
+debian/.debhelper/
+debian/fcitx5-shadowbar/
+debian/files
+debian/*.substvars
+debian/*.log
+
+# Local models, binaries & large external dictionaries (keep repo lightweight for GitHub)
+*.gguf
+*.ggml
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.ifo
+*.idx
+*.idx.gz
+*.dict
+*.dict.dz
+*.dict.gz
+*.u8
+*.u8.gz
+models/
+dicts/
+
+# User secrets & live local configs (only config.toml.example should be tracked)
+config/config.toml
+*.key
+*.pem
+.env
+.env.*
+
+# Editor & OS temporary files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Testing/

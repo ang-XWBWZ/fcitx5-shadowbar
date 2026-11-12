@@ -1,0 +1,108 @@
+# ShadowBar real-time translation & floating window configuration example
+# Copy to ~/.config/shadowbar/config.toml (hot-reloaded automatically on save)
+# Licensed under CC BY-NC-SA 4.0 (see LICENSES/CC-BY-NC-SA-4.0.txt)
+
+[trigger]
+enable_prefix = true
+prefix = ";;"
+prefix_only_in_cjk_im = true
+prefix_timeout_ms = 380
+toggle_hotkey = "Control+Shift+T"
+cycle_lang_hotkey = "Alt+Shift+L"
+cycle_preset_hotkey = "Alt+Shift+P"
+oneshot_hotkey = ""
+
+[behavior]
+debounce_ms = 260
+request_timeout_ms = 4500
+lock_on_punctuation = true
+esc_clears_pinyin_first = true
+offline_dict_fallback = true
+offline_dict_path = "" # Optional legacy single dictionary path; prefer [dicts.<id>] below
+auto_detect_direction = true
+cache_size = 2000
+
+[translation]
+# Supported canonical codes:
+# auto, en, zh, zh-TW, ja, ko, fr, de, es, pt, ru, it, ar, th, vi, id, hi, nl, pl, tr, uk
+source_lang = "zh"
+target_lang = "en"
+floating_source_lang = "auto"
+cycle_languages = ["en", "zh", "ja"]
+active_preset = "quick"
+
+[ui]
+show_source_line = true
+collapse_candidates_when_idle = true
+expand_actions = false
+
+[floating]
+enabled = true
+hotkey = "Alt+Shift+Q"
+auto_read_clipboard = true
+# Background clipboard monitoring (Wayland wl-paste + KDE Klipper + Qt) without needing focus/pin;
+# automatically avoids password/sensitive hints, local file URIs/paths, URLs, and binary blobs.
+watch_clipboard = false
+show_orb = false
+pinned = false
+result_only = false
+font_scale = 100
+segment_max_chars = 500
+
+[hymt]
+# Local Hunyuan HY-MT1.5-1.8B GGUF runtime (managed via Tab 3 in shadowbar-float --settings)
+variant = "2bit"         # "1.25bit", "2bit", or "custom"
+backend = "auto"         # "auto" (Vulkan GPU preferred, CPU fallback), "vulkan", or "cpu"
+port = 18081
+threads = 0              # 0 = auto CPU core count
+mirror = "huggingface"   # "huggingface" or "hf-mirror"
+server_path = ""
+model_125bit_path = ""
+model_2bit_path = ""
+custom_model_path = ""
+auto_start = true
+
+[presets.quick]
+label = "直译"
+provider = "google_free"
+target_lang = "en"
+
+[presets.natural]
+label = "自然"
+provider = "openai"
+endpoint = "https://api.openai.com/v1/chat/completions"
+api_key = "env:OPENAI_API_KEY"
+model = "gpt-4o-mini"
+prompt = "Translate the user's text into natural, idiomatic English. Output only the translation."
+target_lang = "en"
+
+[presets.work]
+label = "职场"
+provider = "openai"
+endpoint = "https://api.openai.com/v1/chat/completions"
+api_key = "env:OPENAI_API_KEY"
+model = "gpt-4o-mini"
+prompt = "Translate into polite, concise, professional business English. Output only the translation."
+target_lang = "en"
+
+[presets.offline]
+label = "离线词库"
+provider = "offline"
+target_lang = "en"
+
+# External multilingual offline dictionaries (also configurable from shadowbar-float Settings)
+# Supported formats: ECDICT (.db/.sqlite/.sqlite3/.csv/.csv.gz), StarDict (.ifo/.idx/.dict.dz),
+# CC-CEDICT (.u8/.u8.gz), JSON/JSONL (.json/.jsonl/.jsonl.gz), TSV/Delimited text.
+# [dicts.ecdict]
+# label = "ECDICT En-Zh"
+# path = "~/.local/share/shadowbar/ecdict.db"
+# source_lang = "en"
+# target_lang = "zh"
+# enabled = true
+#
+# [dicts.ja_zh]
+# label = "Ja-Zh Custom Dict"
+# path = "~/.local/share/shadowbar/dicts/ja-zh.jsonl"
+# source_lang = "ja"
+# target_lang = "zh"
+# enabled = false

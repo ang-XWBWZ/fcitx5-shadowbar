@@ -1,0 +1,23 @@
+name: Feature Request
+description: Suggest an enhancement for Fcitx5 integration, translation backends, or floating UI
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Motivation / Use Case
+      description: What workflow or pain point would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Behavior
+      description: Describe the expected UX, config options, or platform support (Wayland / X11).
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        > **Reminder:** By submitting feature proposals or code contributions, please note that this project is dual-licensed for non-commercial use (`PolyForm-Noncommercial-1.0.0` for code, `CC-BY-NC-SA-4.0` for documentation).

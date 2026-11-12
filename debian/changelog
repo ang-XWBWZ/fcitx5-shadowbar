@@ -1,0 +1,11 @@
+fcitx5-shadowbar (0.1.0-1) unstable; urgency=medium
+
+  * Initial public non-commercial open-source release:
+    - ShadowBar Fcitx5 addon & virtual IM (`libshadowbar.so`, `libshadowbarim.so`)
+    - Qt6 floating translation UI (`shadowbar-float`) with Wayland/X11 background clipboard watch & file/link avoidance
+    - 20-language unified translation routing & `shadowbar-sim` interactive CLI simulator
+    - Multi-format offline dictionary engine (ECDICT SQLite/CSV, StarDict, CC-CEDICT, JSON/JSONL, TSV)
+    - Hunyuan HY-MT1.5-1.8B (1.25bit / 2bit GGUF) local model manager with Vulkan/CPU fallback
+    - Built-in One-Click Chinese Environment & IME Fixer (Arch, Debian/Ubuntu, Fedora, openSUSE)
+
+ -- ang <ang-XWBWZ@users.noreply.github.com>  Wed, 11 Nov 2026 23:59:00 -0500

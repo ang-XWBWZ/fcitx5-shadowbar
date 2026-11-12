@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=ShadowBar Translator
+Name[zh_CN]=ShadowBar 翻译悬浮窗
+Comment=Floating real-time clipboard translator and settings manager for Fcitx5 ShadowBar
+Comment[zh_CN]=Fcitx5 ShadowBar 伴随式剪贴板翻译悬浮窗与设置中心
+Exec=shadowbar-float --toggle
+Icon=accessories-dictionary
+Terminal=false
+Categories=Utility;Office;Qt;
+StartupNotify=false
+SingleMainWindow=true

@@ -1,0 +1,47 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: fcitx5-shadowbar
+Upstream-Contact: ang <ang-XWBWZ@users.noreply.github.com>
+Source: https://github.com/ang-XWBWZ/fcitx5-shadowbar
+
+Files: *
+Copyright: 2026 ang (ang-XWBWZ)
+License: PolyForm-Noncommercial-1.0.0
+Comment:
+ Required Notice: Copyright (c) 2026 ang (ang-XWBWZ) (https://github.com/ang-XWBWZ/fcitx5-shadowbar)
+ Complete verbatim text is shipped in `LICENSES/PolyForm-Noncommercial-1.0.0.txt`.
+
+Files:
+ README.md
+ README.zh-CN.md
+ CHANGELOG.md
+ CONTRIBUTING.md
+ SECURITY.md
+ docs/*
+ config/config.toml.example
+Copyright: 2026 ang (ang-XWBWZ)
+License: CC-BY-NC-SA-4.0
+Comment:
+ Complete verbatim text is shipped in `LICENSES/CC-BY-NC-SA-4.0.txt`.
+
+Files: debian/*
+Copyright: 2026 ang (ang-XWBWZ)
+License: PolyForm-Noncommercial-1.0.0
+
+License: PolyForm-Noncommercial-1.0.0
+ PolyForm Noncommercial License 1.0.0
+ <https://polyformproject.org/licenses/noncommercial/1.0.0>
+ .
+ See `LICENSES/PolyForm-Noncommercial-1.0.0.txt` (or `/usr/share/doc/fcitx5-shadowbar/LICENSES/PolyForm-Noncommercial-1.0.0.txt`)
+ for the complete legally binding license text.
+ .
+ Summary notice: Noncommercial purposes only (personal, educational,
+ research, charitable/public noncommercial organizations). Commercial use,
+ delegation/sublicensing, and patent claims against the software are prohibited.
+ The software is provided "as is", without warranty or liability.
+
+License: CC-BY-NC-SA-4.0
+ Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+ <https://creativecommons.org/licenses/by-nc-sa/4.0/>
+ .
+ See `LICENSES/CC-BY-NC-SA-4.0.txt` (or `/usr/share/doc/fcitx5-shadowbar/LICENSES/CC-BY-NC-SA-4.0.txt`)
+ for the complete legally binding license text.

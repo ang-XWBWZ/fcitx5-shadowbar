@@ -1,0 +1,112 @@
+fcitx5-shadowbar — Dual Non-Commercial License Notice
+
+Copyright (c) 2026 ang (ang-XWBWZ)
+Repository: https://github.com/ang-XWBWZ/fcitx5-shadowbar
+
+Required Notice: Copyright (c) 2026 ang (ang-XWBWZ) (https://github.com/ang-XWBWZ/fcitx5-shadowbar)
+
+================================================================================
+License Scope (Dual Non-Commercial Licensing)
+================================================================================
+
+1. Software Source Code, Build System, Scripts, and Packaging Rules
+   Applies to all source files, headers, tests, build definitions, packaging
+   manifests, and shell scripts (including `core/`, `fcitx5-addon/`,
+   `floating-ui/`, `cli-sim/`, `tests/`, `scripts/`, `CMakeLists.txt`,
+   `debian/`, and `.github/`).
+
+   SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+   Full text below and in `LICENSES/PolyForm-Noncommercial-1.0.0.txt`.
+
+2. Documentation, Guides, and Configuration Examples
+   Applies to `README.md`, `README.zh-CN.md`, `CHANGELOG.md`, `CONTRIBUTING.md`,
+   `SECURITY.md`, `docs/`, and `config/config.toml.example`.
+
+   SPDX-License-Identifier: CC-BY-NC-SA-4.0
+   Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International.
+   Full text in `LICENSES/CC-BY-NC-SA-4.0.txt`.
+
+3. Third-Party Libraries, Models, and External Dictionaries
+   - Dynamic system dependencies retain their respective upstream licenses
+     (Fcitx5: LGPL-2.1-or-later; Qt6: LGPL-3.0-only; libcurl: curl license;
+     nlohmann_json: MIT; SQLite3: blessing/public-domain; zlib: Zlib).
+   - No large LLM weights (e.g., Hunyuan HY-MT1.5 GGUF) or third-party
+     dictionary databases (e.g., ECDICT, CC-CEDICT, StarDict packs) are
+     bundled in this repository. When downloading or importing external models
+     or dictionaries locally, users remain responsible for complying with each
+     upstream resource's license terms.
+
+4. Commercial Inquiries
+   Commercial use, SaaS hosting for commercial purposes, or paid redistribution
+   is NOT permitted under either non-commercial license without separate written
+   authorization from the copyright holder (`ang` / `ang-XWBWZ`).
+
+================================================================================
+
+# PolyForm Noncommercial License 1.0.0
+
+<https://polyformproject.org/licenses/noncommercial/1.0.0>
+
+## Acceptance
+
+In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
+
+## Copyright License
+
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose. However, you may only distribute the software according to Distribution License and make changes or new works based on the software according to Changes and New Works License.
+
+## Distribution License
+
+The licensor grants you an additional copyright license to distribute copies of the software. Your license to distribute covers distributing the software with changes and new works permitted by Changes and New Works License.
+
+## Notices
+
+You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with Required Notice: that the licensor provided with the software. For example:
+
+    Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
+
+## Changes and New Works License
+
+The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
+
+## Patent License
+
+The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
+
+## Noncommercial Purposes
+
+Any noncommercial purpose is a permitted purpose.
+
+## Personal Uses
+
+Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is a permitted purpose.
+
+## Noncommercial Organizations
+
+Use by a charitable organization, public educational institution, public research organization, public safety or health organization, public environmental protection organization, or government institution, provided their participation is 100% public, is a permitted purpose.
+
+## Restrictions
+
+### Commercial Use
+
+Any commercial use is not a permitted purpose.
+
+### Delegation and Transfer
+
+You may not sublicense or transfer any of the licenses granted to you under these terms.
+
+### Patent Retaliation
+
+If you or your affiliate make any written claim that the software infringes or contributes to infringement of any patent, your patent license from the licensor for the software ends immediately.
+
+## Term
+
+These terms begin as soon as you accept them.
+
+Your licenses end immediately if you breach any of them. If you fix your breach within 30 days of discovery, your licenses revive retroactively, unless the licensor has already terminated them explicitly.
+
+Even though your licenses end, everyone who received copies or rights from you under these terms keeps theirs.
+
+## Disclaimer
+
+As far as the law allows, the software comes as is, without any warranty, and no licensor will be liable to you for any damages arising out of these terms or the use or distribution of the software, under any kind of legal claim.

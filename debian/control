@@ -1,0 +1,43 @@
+Source: fcitx5-shadowbar
+Section: utils
+Priority: optional
+Maintainer: ang <ang-XWBWZ@users.noreply.github.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake (>= 3.20),
+ pkgconf,
+ libfcitx5core-dev (>= 5.0.20),
+ libfcitx5config-dev (>= 5.0.20),
+ libfcitx5utils-dev (>= 5.0.20),
+ libcurl4-openssl-dev | libcurl-dev,
+ nlohmann-json3-dev,
+ qt6-base-dev,
+ libsqlite3-dev,
+ zlib1g-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/ang-XWBWZ/fcitx5-shadowbar
+Vcs-Browser: https://github.com/ang-XWBWZ/fcitx5-shadowbar
+Vcs-Git: https://github.com/ang-XWBWZ/fcitx5-shadowbar.git
+Rules-Requires-Root: no
+
+Package: fcitx5-shadowbar
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ fcitx5 (>= 5.0.20)
+Recommends:
+ wl-clipboard,
+ fcitx5-chinese-addons,
+ fonts-noto-cjk
+Description: Dual-track real-time translation addon and Qt6 floating bar for Fcitx5
+ ShadowBar provides a lightweight non-blocking translation overlay directly
+ alongside Fcitx5 Chinese/CJK/English input plus a Qt6 floating translation
+ window (`shadowbar-float`) with Wayland/X11 clipboard monitoring.
+ .
+ Features:
+  * One-Shot (`;;`), Sticky (`Ctrl+Shift+T`), and Virtual IM modes
+  * 20 languages with multi-provider routing (OpenAI-compatible, Ollama, DeepL, GoogleFree)
+  * Local Hunyuan HY-MT1.5-1.8B (1.25bit / 2bit GGUF) management with Vulkan/CPU fallback
+  * Multi-format offline dictionary support (ECDICT SQLite/CSV, StarDict, CC-CEDICT, JSON/JSONL, TSV)
+  * Built-in one-click Chinese environment & IME fixer for Wayland and X11

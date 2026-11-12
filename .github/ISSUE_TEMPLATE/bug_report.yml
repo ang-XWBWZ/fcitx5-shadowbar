@@ -1,0 +1,52 @@
+name: Bug Report
+description: Report a crash, build failure, Fcitx5 compatibility issue, or translation/clipboard bug
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting an issue in **fcitx5-shadowbar**! Please redact any personal API keys or sensitive text before pasting config snippets.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem Description
+      description: Clearly describe what happened and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Open...
+        2. Trigger `;;` or `Alt+Shift+Q`...
+        3. Observe...
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      options:
+        - fcitx5-addon (inline shadow bar / virtual IM)
+        - floating-ui (`shadowbar-float`, clipboard monitor, settings)
+        - Local HY-MT1.5 runtime (`llama-server`, Vulkan/CPU)
+        - Offline Dictionary Engine (ECDICT / StarDict / CEDICT / JSON)
+        - Chinese Environment & IME Fixer
+        - Build / Packaging (CMake / Debian)
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS, Desktop & Session Type
+      placeholder: "e.g., Arch Linux / KDE Plasma 6 / Wayland (or Ubuntu 24.04 X11)"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Diagnostics
+      description: Paste `ctest` failures, terminal output from `shadowbar-float`, or sanitized diagnostics from Tab 4.
+      render: text
