@@ -59,6 +59,8 @@ if(BUILD_FCITX5_ADDON)
         PRIVATE
             SHADOWBAR_BUILD_DIR="$<TARGET_FILE_DIR:shadowbar>"
             SHADOWBAR_TEST_DATA_DIR="${CMAKE_CURRENT_BINARY_DIR}/testdata"
+            SHADOWBAR_FCITX5_ADDON_DIR="${FCITX_INSTALL_ADDONDIR}"
+            SHADOWBAR_FCITX5_DATADIR="${FCITX_INSTALL_PKGDATADIR}"
     )
     target_compile_options(test_fcitx5_integration PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME shadowbar_fcitx5_integration COMMAND test_fcitx5_integration)

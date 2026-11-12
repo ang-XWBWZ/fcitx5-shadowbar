@@ -68,10 +68,10 @@ std::filesystem::path setupTempConfigHome() {
 int main() {
     const auto cfg_home = setupTempConfigHome();
 
-    fcitx::setupTestingEnvironmentPath(
+    fcitx::setupTestingEnvironment(
         SHADOWBAR_TEST_DATA_DIR,
-        {SHADOWBAR_BUILD_DIR, "/usr/lib/fcitx5"},
-        {SHADOWBAR_TEST_DATA_DIR, "/usr/share/fcitx5"});
+        {SHADOWBAR_BUILD_DIR, SHADOWBAR_FCITX5_ADDON_DIR, "/usr/lib/fcitx5"},
+        {SHADOWBAR_TEST_DATA_DIR, SHADOWBAR_FCITX5_DATADIR, "/usr/share/fcitx5"});
 
     char arg0[] = "test_fcitx5_integration";
     char arg1[] = "--disable=all";

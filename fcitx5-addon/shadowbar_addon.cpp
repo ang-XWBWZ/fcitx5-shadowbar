@@ -7,7 +7,13 @@
 #include <fcitx-utils/eventdispatcher.h>
 #include <fcitx-utils/keysym.h>
 #include <fcitx-utils/misc.h>
+#if defined(__has_include) && __has_include(<fcitx-utils/standardpaths.h>)
 #include <fcitx-utils/standardpaths.h>
+#define SHADOWBAR_HAS_FCITX_STANDARDPATHS 1
+#else
+#include <fcitx-utils/standardpath.h>
+#define SHADOWBAR_HAS_FCITX_STANDARDPATHS 0
+#endif
 #include <fcitx-utils/utf8.h>
 #include <fcitx/addonmanager.h>
 #include <fcitx/candidatelist.h>
@@ -50,6 +56,24 @@ void showToast(fcitx::Instance *instance,
 #else
     (void)message;
     instance->showInputMethodInformation(ic);
+#endif
+}
+
+#if SHADOWBAR_HAS_FCITX_STANDARDPATHS
+constexpr auto kFcitxPkgConfigType = fcitx::StandardPathsType::PkgConfig;
+#else
+constexpr auto kFcitxPkgConfigType = fcitx::StandardPath::Type::PkgConfig;
+#endif
+
+std::filesystem::path userPkgConfigConfPath() {
+#if SHADOWBAR_HAS_FCITX_STANDARDPATHS
+    return std::filesystem::path(
+               fcitx::StandardPaths::global().userDirectory(kFcitxPkgConfigType)) /
+           "conf" / "shadowbar.conf";
+#else
+    return std::filesystem::path(
+               fcitx::StandardPath::global().userDirectory(kFcitxPkgConfigType)) /
+           "conf" / "shadowbar.conf";
 #endif
 }
 
@@ -486,15 +510,13 @@ void ShadowBarAddon::reloadConfig() {
 
     // Only apply Fcitx5 INI file if it exists and is newer than config.toml,
     // so manual edits to config.toml are never overwritten on Fcitx5 restart.
-    const auto fcitx_conf_path =
-        fcitx::StandardPaths::global().userDirectory(fcitx::StandardPathsType::PkgConfig) /
-        "conf" / "shadowbar.conf";
+    const auto fcitx_conf_path = userPkgConfigConfPath();
     std::error_code ec;
     if (std::filesystem::exists(fcitx_conf_path, ec)) {
         auto ini_time = std::filesystem::last_write_time(fcitx_conf_path, ec);
         auto toml_time = std::filesystem::last_write_time(config_mgr_.path(), ec);
         if (!ec && ini_time > toml_time) {
-            fcitx::readAsIni(fcitx_config_, fcitx::StandardPathsType::PkgConfig,
+            fcitx::readAsIni(fcitx_config_, kFcitxPkgConfigType,
                              "conf/shadowbar.conf");
             applyFcitxConfigToToml();
         }
@@ -517,7 +539,7 @@ void ShadowBarAddon::setConfig(const fcitx::RawConfig &config) {
     const bool prev_enabled = config_mgr_.config().floating_enabled;
     const bool prev_orb = config_mgr_.config().floating_show_orb;
     fcitx_config_.load(config, true);
-    fcitx::safeSaveAsIni(fcitx_config_, fcitx::StandardPathsType::PkgConfig,
+    fcitx::safeSaveAsIni(fcitx_config_, kFcitxPkgConfigType,
                          "conf/shadowbar.conf");
     applyFcitxConfigToToml();
     translator_.clearCache();
@@ -1532,4 +1554,8 @@ fcitx::AddonInstance *ShadowBarAddonFactory::create(fcitx::AddonManager *manager
 
 } // namespace shadowbar::fcitx_addon
 
+#ifdef FCITX_ADDON_FACTORY_V2_BACKWARDS
 FCITX_ADDON_FACTORY_V2_BACKWARDS(shadowbar, shadowbar::fcitx_addon::ShadowBarAddonFactory)
+#else
+FCITX_ADDON_FACTORY(shadowbar::fcitx_addon::ShadowBarAddonFactory)
+#endif

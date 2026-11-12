@@ -147,4 +147,8 @@ fcitx::AddonInstance *ShadowBarIMFactory::create(fcitx::AddonManager *manager) {
 
 } // namespace shadowbar::fcitx_addon
 
+#ifdef FCITX_ADDON_FACTORY_V2_BACKWARDS
 FCITX_ADDON_FACTORY_V2_BACKWARDS(shadowbarim, shadowbar::fcitx_addon::ShadowBarIMFactory)
+#else
+FCITX_ADDON_FACTORY(shadowbar::fcitx_addon::ShadowBarIMFactory)
+#endif
