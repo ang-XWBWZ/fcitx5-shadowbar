@@ -6,36 +6,90 @@
 
 **Language:** English | [简体中文](README.zh-CN.md)
 
-A dual-track real-time translation companion bar, virtual input method, Qt6 Wayland/X11 floating translator, offline multilingual dictionary engine, local **HY-MT1.5-1.8B** (`1.25bit` / `2bit`) runtime manager, and one-click Chinese environment & IME fixer for **Fcitx5** on Linux.
+**A dual-mode real-time translator for Linux (Wayland / X11): Fcitx5 Inline Companion Translation + Smart Qt6 Floating Translation Popup (`shadowbar-float`).**  
+Translate seamlessly while typing inside any Chinese/CJK input method, or pop up an instant clipboard/on-demand translator window anywhere — powered by **20 languages**, **cloud/local LLMs**, local **Hunyuan `HY-MT1.5` (`1.25bit` / `2bit`)**, and **multi-format millisecond offline dictionaries**.
 
-> **Non-Commercial Open Source:** Source code is licensed under [PolyForm Noncommercial License 1.0.0](LICENSES/PolyForm-Noncommercial-1.0.0.txt); documentation and example configs are licensed under [CC BY-NC-SA 4.0](LICENSES/CC-BY-NC-SA-4.0.txt). See [LICENSE](LICENSE).
-
----
-
-## Key Features
-
-- **Dual-Track Inline Fcitx5 Translation (`fcitx5-addon/`)**:
-  - **One-Shot Mode (`;;`)**: Type `;;` followed by Chinese/source text inside Fcitx5; preview live translations non-blockingly, press `Enter` to commit the translation or `Shift+Enter` to commit the original text.
-  - **Sticky Mode (`Control+Shift+T`) & Virtual IM (`shadowbar`)**: Keep real-time translation active across sentences or add `ShadowBar` directly as an input method.
-  - **Global Cycling Shortcuts**: Switch target languages (`Alt+Shift+L`) and translation presets (`Alt+Shift+P`) on the fly without blocking normal typing.
-- **Qt6 Floating Window & Desktop Orb (`shadowbar-float`)**:
-  - Toggle anywhere (`Alt+Shift+Q`), translate with auto-detected direction, pin above windows, switch to Result-Only mode, scale typography, and process long paragraphs cleanly via word/character-aware batching (`segment_max_chars`).
-- **Wayland & X11 Background Clipboard Monitor**:
-  - Tracks clipboard changes in the background on Wayland (`wl-paste --watch` + KDE Klipper D-Bus + `QClipboard`) without requiring window focus or pinning.
-  - Automatically skips password/sensitive hints, local file URIs/paths, URLs, Markdown links, and binary non-text payloads.
-- **20-Language Unified Pipeline & Flexible Backends (`core/`)**:
-  - Supports `en`, `zh`, `zh-TW`, `ja`, `ko`, `fr`, `de`, `es`, `pt`, `ru`, `it`, `ar`, `th`, `vi`, `id`, `hi`, `nl`, `pl`, `tr`, and `uk` (plus `auto` detection).
-  - Works with OpenAI-compatible APIs, Ollama, DeepL, Google Free, local Hunyuan `HY-MT1.5-1.8B` servers, and offline dictionaries.
-- **Local Hunyuan `HY-MT1.5-1.8B` Manager (`1.25bit` & `2bit` GGUF)**:
-  - Download (`HuggingFace` / `HF-Mirror`), configure, and launch local `llama-server` directly from Settings Tab 3 with **`auto` (Vulkan GPU preferred + CPU fallback)**, `vulkan`, or `cpu` execution modes.
-- **Multi-Format Offline Dictionary Engine**:
-  - Built-in dictionary index plus extensible `[dicts.<id>]` manager supporting **ECDICT SQLite/CSV** (`.db`, `.sqlite`, `.sqlite3`, `.csv`, `.csv.gz`), **StarDict** (`.ifo`, `.idx`, `.dict.dz`), **CC-CEDICT** (`.u8`), **JSON / JSONL**, and delimited `.tsv`/`.txt` files.
-- **One-Click Chinese Environment & IME Fixer (Settings Tab 4)**:
-  - Cross-distro diagnostic and automated repair for **Arch Linux**, **Debian / Ubuntu**, **Fedora / RHEL**, and **openSUSE**: installs missing Fcitx5/CJK font/`wl-clipboard` packages, configures CJK-friendly monospace font fallback, initializes `~/.config/fcitx5/profile`, and syncs Wayland (`environment.d` + D-Bus) and X11 (`~/.xprofile`) IME variables.
+> **Non-Commercial Open Source:** Source code & scripts are licensed under [PolyForm Noncommercial License 1.0.0](LICENSES/PolyForm-Noncommercial-1.0.0.txt); documentation & example configs are licensed under [CC BY-NC-SA 4.0](LICENSES/CC-BY-NC-SA-4.0.txt). See [LICENSE](LICENSE).
 
 ---
 
-## Quick Start
+## ✨ Dual Flagship Translation Modes
+
+### 1. Smart Floating Translation Popup & Desktop Orb (`shadowbar-float`)
+
+A fast, always-ready Qt6 translation popup tailored for Wayland (KDE Plasma / GNOME / wlroots) and X11 reading, writing, and clipboard lookup workflows:
+
+```text
+╭───────────────────────────────────────────────────────────────────╮
+│ 🌐 [Auto Detect ▾] ⇄ [English ▾]  [Natural ▾]  👁Watch  🎯Focus 📌 ⚙│
+├───────────────────────────────────────────────────────────────────┤
+│  Clipboard monitoring works seamlessly across Wayland and X11.    │
+│                                              63 chars · Auto EN→ZH│
+├───────────────────────────────────────────────────────────────────┤
+│  ✦ 剪贴板监听可在 Wayland 和 X11 上无缝工作。                      │
+├───────────────────────────────────────────────────────────────────┤
+│  Esc Hide · Ctrl+Enter Copy & Hide     [⇅ Back-Translate] [📋] [↵] │
+╰───────────────────────────────────────────────────────────────────╯
+```
+
+- **Instant Global Toggle & Desktop Orb**: Press `Alt+Shift+Q` from any app to show/hide the popup, or enable the draggable floating desktop orb (left-click expand/collapse, right-click quick actions).
+- **Unfocused Background Clipboard Watch on Wayland**: Combines `wl-paste --watch`, KDE Klipper D-Bus signals, and `QClipboard` so copied text translates automatically **without focusing or pinning the popup**.
+- **Built-in Clipboard Safety Guards**: Automatically skips password/sensitive hints, local file URIs/paths (`/home/...`, `file://`), URLs, Markdown links, and binary non-text payloads.
+- **Popup Productivity Features**:
+  - **20-Language Auto-Detection & Quick Swap**: Automatically detects source language and flips direction (`Alt+S` swaps languages, `Alt+V` pulls current clipboard).
+  - **⇅ Back-Translation Verification (`Alt+R`)**: Moves the translation back into the source pane and re-translates to the original language so you can double-check tone and nuance before sending.
+  - **Smart Long-Text Batching**: Splits long passages using word counting for Latin scripts and character counting for CJK (`segment_max_chars`), translating progressively on demand or scroll.
+  - **Result-Only Focus Mode & Ergonomic Controls**: `Alt+M` toggles Result-Only card view, `Ctrl+R` / `F5` forces cache-bypass retranslation, `Ctrl+Wheel` scales typography (`80%–160%`), `Ctrl+Shift+C` copies translation, `Ctrl+Enter` copies & hides, `Esc` dismisses.
+
+### 2. Inline Fcitx5 Companion Bar & Virtual Input Method
+
+Attach a non-blocking live translation overlay right next to Pinyin/Wubi preedit candidates without interrupting your typing flow:
+
+```text
+  [Target App] Typing normally -> press ;; to start inline translation:
+  ┌──────────────────────────────────────────────────────────┐
+  │ [ZH→EN · Natural] 今天把接口文档同步一下│                 │
+  │ ✦ Let's sync the API documentation today.     · Ready    │
+  ├──────────────────────────────────────────────────────────┤
+  │  ↵ Enter Commit Translation   ⇧ Shift+Enter Commit Raw   │
+  └──────────────────────────────────────────────────────────┘
+```
+
+- **One-Shot (`;;`)**: Type `;;` mid-typing to translate the next phrase and automatically return to normal input after commit/cancel.
+- **Sticky (`Control+Shift+T`) & Virtual IM (`ShadowBar`)**: Stay in live bilingual translation mode across sentences or add `ShadowBar` directly as an input method in Fcitx5.
+- **Instant Shortcuts**: `Alt+Shift+L` cycles target languages (default `["en", "zh", "ja"]`), `Alt+Shift+P` cycles style/provider presets, `Enter` commits the translation, and `Shift+Enter` commits the original text.
+
+---
+
+## 🌐 Multi-Engine Translation Pipeline (20 Languages)
+
+ShadowBar routes across cloud APIs, local quantized LLMs, and zero-latency offline dictionaries from one shared `core/` engine:
+
+| Backend Tier | Supported Engines / Formats | Highlights |
+| --- | --- | --- |
+| **Cloud LLMs & APIs** | OpenAI-compatible (DeepSeek, GPT, custom endpoints), DeepL, Ollama | Custom system prompts (`Direct`, `Natural`, `Work`, etc.), async debouncing & cancel-on-type |
+| **Zero-Config Online** | Google Free | Instant setup with no API key required across all 20 languages |
+| **Local Offline AI** | **Hunyuan `HY-MT1.5-1.8B`** (`1.25bit` ~441 MB / `2bit` ~573 MB / custom `.gguf`) | Built-in `HuggingFace` / `HF-Mirror` downloader & `llama-server` controller; **`auto` tries Vulkan GPU first and falls back to CPU cleanly** |
+| **Millisecond Offline Dicts** | ECDICT (`.db`/`.sqlite`/`.csv`), StarDict (`.ifo`/`.idx`/`.dict.dz`), CC-CEDICT (`.u8`), JSON/JSONL, TSV | Instant offline lookups & fallback; mount multiple language-pair dicts simultaneously via Settings or `[dicts.<id>]` |
+
+**20 Canonical Languages Supported (+ `auto` detection):** `en`, `zh`, `zh-TW`, `ja`, `ko`, `fr`, `de`, `es`, `pt`, `ru`, `it`, `ar`, `th`, `vi`, `id`, `hi`, `nl`, `pl`, `tr`, `uk`.
+
+---
+
+## ⌨️ Essential Shortcuts
+
+| Scope | Shortcut | Action |
+| --- | --- | --- |
+| **Global Popup** | `Alt+Shift+Q` | Toggle `shadowbar-float` translation popup |
+| **Popup Commit / Close** | `Ctrl+Enter` / `Esc` | Copy translation & hide / dismiss popup |
+| **Popup Actions** | `Alt+V` / `Alt+R` / `Alt+S` / `Alt+M` | Read clipboard / Back-translate / Swap languages / Result-Only mode |
+| **Popup Retry / Copy** | `Ctrl+R` (`F5`) / `Ctrl+Shift+C` | Retranslate bypassing cache / Copy translation |
+| **Fcitx5 Inline** | `;;` / `Control+Shift+T` | Trigger One-Shot / Toggle Sticky companion bar |
+| **Fcitx5 Cycling** | `Alt+Shift+L` / `Alt+Shift+P` | Cycle target language / Cycle translation preset |
+
+---
+
+## 🚀 Quick Start
 
 ```bash
 git clone https://github.com/ang-XWBWZ/fcitx5-shadowbar.git
@@ -45,53 +99,39 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
 cmake --build build -j"$(nproc)"
 ctest --test-dir build --output-on-failure -V
 
-# Install to ~/.local and configure IME session environment
+# Install into ~/.local (no root required)
 ./scripts/install_user.sh
+
+# Launch settings & popup (API presets, TY local model, dicts & one-click Chinese env fixer)
 shadowbar-float --settings
 ```
 
-Then either run `./scripts/restart_fcitx5.sh` or try the offline sandbox simulator without touching your desktop IME:
+> **Fresh Host Setup Tip:** Tab 4 (**`中文环境修复` / Chinese Environment Fixer**) inside `shadowbar-float --settings` automatically checks and repairs Fcitx5 packages, CJK monospace font fallback, `~/.config/fcitx5/profile`, and Wayland/X11 IME environment variables on Arch, Debian/Ubuntu, Fedora/RHEL, and openSUSE.
 
-```bash
-./build/cli-sim/shadowbar-sim
-```
-
-Full distro prerequisites, `.deb` packaging, Wayland/X11 setup, local TY GGUF runtime, and offline dictionary setup instructions are in **[docs/INSTALL.md](docs/INSTALL.md)** ([中文安装指南](docs/INSTALL.zh-CN.md)).
+See **[docs/INSTALL.md](docs/INSTALL.md)** ([中文安装指南](docs/INSTALL.zh-CN.md)) for full distro packages, `.deb` builds, Wayland/X11 setup, local TY GGUF runtime, and external dictionary mounting. You can also test translation routing immediately in terminal via `./build/cli-sim/shadowbar-sim`.
 
 ---
 
-## Repository Layout
+## 📁 Repository Structure
 
 | Path | Purpose | License |
 | --- | --- | --- |
-| `core/` | Shared C++20 session state machine, 20-language registry, TOML config loader, sentence splitter, async translator & multi-format offline dictionary engine | `PolyForm-Noncommercial-1.0.0` |
-| `fcitx5-addon/` | `libshadowbar.so` companion addon & `libshadowbarim.so` virtual input method + `.conf` templates | `PolyForm-Noncommercial-1.0.0` |
-| `floating-ui/` | `shadowbar-float` Qt6 floating window, desktop orb, Wayland/X11 clipboard monitor, TY model manager & Chinese env fixer | `PolyForm-Noncommercial-1.0.0` |
-| `cli-sim/` | `shadowbar-sim` standalone interactive CLI sandbox simulator | `PolyForm-Noncommercial-1.0.0` |
+| `core/` | C++20 translation pipeline, session state machine, 20-language registry, TOML hot-reload config, sentence splitter & offline dictionary engine | `PolyForm-Noncommercial-1.0.0` |
+| `floating-ui/` | `shadowbar-float` Qt6 popup window, desktop orb, Wayland/X11 clipboard monitor, TY model manager & Chinese env fixer | `PolyForm-Noncommercial-1.0.0` |
+| `fcitx5-addon/` | `libshadowbar.so` companion addon & `libshadowbarim.so` virtual IM | `PolyForm-Noncommercial-1.0.0` |
+| `cli-sim/` | `shadowbar-sim` standalone CLI simulator | `PolyForm-Noncommercial-1.0.0` |
 | `tests/` | CTest suites (`test_core`, `test_fcitx5_integration`, `test_floating_ui_helpers`) | `PolyForm-Noncommercial-1.0.0` |
-| `scripts/` & `debian/` | User/system install scripts, Fcitx5 restart helper, and Debian `.deb` packaging rules | `PolyForm-Noncommercial-1.0.0` |
+| `scripts/` & `debian/` | Install/restart scripts and Debian `.deb` packaging files | `PolyForm-Noncommercial-1.0.0` |
 | `docs/` & `config/config.toml.example` | Installation guides and commented configuration example (`~/.config/shadowbar/config.toml`) | `CC-BY-NC-SA-4.0` |
 | `LICENSES/` | Verbatim official texts of `PolyForm-Noncommercial-1.0.0` and `CC-BY-NC-SA-4.0` | — |
 
 ---
 
-## Documentation & Community
-
-- Installation Guide: [docs/INSTALL.md](docs/INSTALL.md) | [docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)
-- Example Configuration: [config/config.toml.example](config/config.toml.example)
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Security Policy: [SECURITY.md](SECURITY.md)
-
----
-
-## License & Copyright
+## 📄 License & Community
 
 Copyright (c) 2026 **ang** ([ang-XWBWZ](https://github.com/ang-XWBWZ))
 
-- **Code, scripts, tests, and packaging (`core/`, `fcitx5-addon/`, `floating-ui/`, `cli-sim/`, `tests/`, `scripts/`, `debian/`, `CMakeLists.txt`, `.github/`)**:
-  Licensed under the **PolyForm Noncommercial License 1.0.0** ([LICENSES/PolyForm-Noncommercial-1.0.0.txt](LICENSES/PolyForm-Noncommercial-1.0.0.txt)).
-- **Documentation & configuration examples (`README*.md`, `docs/`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, `config/config.toml.example`)**:
-  Licensed under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International** ([LICENSES/CC-BY-NC-SA-4.0.txt](LICENSES/CC-BY-NC-SA-4.0.txt)).
-
-Commercial use is prohibited under both licenses. See [LICENSE](LICENSE) for complete required notices and third-party dynamic-linking disclosures.
+- **Code, scripts & packaging**: [PolyForm Noncommercial License 1.0.0](LICENSES/PolyForm-Noncommercial-1.0.0.txt)
+- **Documentation & example configs**: [CC BY-NC-SA 4.0](LICENSES/CC-BY-NC-SA-4.0.txt)
+- Commercial use is prohibited under both licenses. See [LICENSE](LICENSE) for full notices and third-party library disclosures.
+- Links: [Install Guide](docs/INSTALL.md) · [Config Example](config/config.toml.example) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security Policy](SECURITY.md)

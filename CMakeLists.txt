@@ -19,6 +19,15 @@ option(BUILD_TESTS "Build unit and integration tests" ON)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(Threads REQUIRED)
+find_package(SQLite3 QUIET)
+find_package(ZLIB QUIET)
+
+set(SHADOWBAR_SQLITE3_TARGET "")
+if(TARGET SQLite3::SQLite3)
+    set(SHADOWBAR_SQLITE3_TARGET SQLite3::SQLite3)
+elseif(TARGET SQLite::SQLite3)
+    set(SHADOWBAR_SQLITE3_TARGET SQLite::SQLite3)
+endif()
 
 add_subdirectory(core)
 

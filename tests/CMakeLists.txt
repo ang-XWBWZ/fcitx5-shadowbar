@@ -2,8 +2,8 @@ add_executable(test_core
     test_core.cpp
 )
 target_link_libraries(test_core PRIVATE shadowbar_core)
-if(TARGET SQLite3::SQLite3)
-    target_link_libraries(test_core PRIVATE SQLite3::SQLite3)
+if(SHADOWBAR_SQLITE3_TARGET)
+    target_link_libraries(test_core PRIVATE ${SHADOWBAR_SQLITE3_TARGET})
     target_compile_definitions(test_core PRIVATE SHADOWBAR_HAS_SQLITE3=1)
 endif()
 target_compile_options(test_core PRIVATE -Wall -Wextra -Wpedantic)

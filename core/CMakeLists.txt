@@ -1,7 +1,18 @@
 cmake_minimum_required(VERSION 3.20)
 
-find_package(SQLite3 QUIET)
-find_package(ZLIB QUIET)
+if(NOT DEFINED SHADOWBAR_SQLITE3_TARGET)
+    find_package(SQLite3 QUIET)
+    if(TARGET SQLite3::SQLite3)
+        set(SHADOWBAR_SQLITE3_TARGET SQLite3::SQLite3)
+    elseif(TARGET SQLite::SQLite3)
+        set(SHADOWBAR_SQLITE3_TARGET SQLite::SQLite3)
+    else()
+        set(SHADOWBAR_SQLITE3_TARGET "")
+    endif()
+endif()
+if(NOT TARGET ZLIB::ZLIB)
+    find_package(ZLIB QUIET)
+endif()
 
 add_library(shadowbar_core STATIC
     src/utf8_util.cpp
@@ -26,12 +37,12 @@ target_link_libraries(shadowbar_core
         Threads::Threads
 )
 
-if(SQLite3_FOUND)
-    target_link_libraries(shadowbar_core PRIVATE SQLite3::SQLite3)
+if(SHADOWBAR_SQLITE3_TARGET)
+    target_link_libraries(shadowbar_core PRIVATE ${SHADOWBAR_SQLITE3_TARGET})
     target_compile_definitions(shadowbar_core PRIVATE SHADOWBAR_HAS_SQLITE3=1)
 endif()
 
-if(ZLIB_FOUND)
+if(TARGET ZLIB::ZLIB)
     target_link_libraries(shadowbar_core PRIVATE ZLIB::ZLIB)
     target_compile_definitions(shadowbar_core PRIVATE SHADOWBAR_HAS_ZLIB=1)
 endif()
