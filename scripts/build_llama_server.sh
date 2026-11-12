@@ -103,6 +103,31 @@ case "${GGML_VULKAN_MODE}" in
         ;;
 esac
 
+EXTRA_CMAKE_ARGS=()
+if [[ "${USE_VULKAN}" == "ON" ]]; then
+    VK_HDR_VER=""
+    if [[ -f /usr/local/include/vulkan/vulkan_core.h ]]; then
+        VK_HDR_VER="$(sed -n 's/^#define VK_HEADER_VERSION \([0-9][0-9]*\).*/\1/p' /usr/local/include/vulkan/vulkan_core.h | head -n 1 || true)"
+    elif [[ -f /usr/include/vulkan/vulkan_core.h ]]; then
+        VK_HDR_VER="$(sed -n 's/^#define VK_HEADER_VERSION \([0-9][0-9]*\).*/\1/p' /usr/include/vulkan/vulkan_core.h | head -n 1 || true)"
+    fi
+    if [[ -n "${VK_HDR_VER}" ]] && (( VK_HDR_VER < 287 )); then
+        VK_HDR_SRC="${BUILD_DIR}/vulkan-headers-src"
+        VK_HDR_PREFIX="${BUILD_DIR}/vulkan-headers"
+        echo "[prep] System Vulkan headers (${VK_HDR_VER}) < 287; staging Vulkan-Headers v1.3.296..."
+        if [[ ! -f "${VK_HDR_PREFIX}/include/vulkan/vulkan.hpp" ]]; then
+            rm -rf "${VK_HDR_SRC}"
+            git clone --depth 1 --branch v1.3.296 https://github.com/KhronosGroup/Vulkan-Headers.git "${VK_HDR_SRC}"
+            cmake -S "${VK_HDR_SRC}" -B "${VK_HDR_SRC}/build" -DCMAKE_INSTALL_PREFIX="${VK_HDR_PREFIX}" >/dev/null
+            cmake --install "${VK_HDR_SRC}/build" >/dev/null
+        fi
+        EXTRA_CMAKE_ARGS+=(
+            -DVulkan_INCLUDE_DIR="${VK_HDR_PREFIX}/include"
+            "-DCMAKE_CXX_FLAGS=-isystem ${VK_HDR_PREFIX}/include"
+        )
+    fi
+fi
+
 echo "[1/4] Fetching llama.cpp (${LLAMA_COMMIT}) from ${LLAMA_REPO_URL}..."
 if [[ ! -d "${SRC_DIR}/.git" ]]; then
     mkdir -p "${SRC_DIR}"
@@ -122,7 +147,8 @@ cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" \
     -DGGML_NATIVE="${GGML_NATIVE_MODE}" \
     -DLLAMA_CURL=OFF \
     -DLLAMA_BUILD_TESTS=OFF \
-    -DLLAMA_BUILD_SERVER=ON
+    -DLLAMA_BUILD_SERVER=ON \
+    ${EXTRA_CMAKE_ARGS[@]+"${EXTRA_CMAKE_ARGS[@]}"}
 
 echo "[3/4] Building target 'llama-server'..."
 JOBS="$(nproc 2>/dev/null || echo 4)"
