@@ -98,8 +98,20 @@ jobs:
             pkgconf \
             binutils \
             libvulkan-dev \
+            spirv-headers \
             glslc \
             glslang-tools
+          if [ ! -e /usr/share/cmake/SPIRV-Headers/SPIRV-HeadersConfig.cmake ] && \
+             [ ! -e /usr/lib/cmake/SPIRV-Headers/SPIRV-HeadersConfig.cmake ] && \
+             [ ! -e /usr/share/SPIRV-Headers/cmake/SPIRV-HeadersConfig.cmake ]; then
+            mkdir -p /usr/local/lib/cmake/SPIRV-Headers
+            printf '%s\n' \
+              'if(NOT TARGET SPIRV-Headers::SPIRV-Headers)' \
+              '  add_library(SPIRV-Headers::SPIRV-Headers INTERFACE IMPORTED)' \
+              '  set_target_properties(SPIRV-Headers::SPIRV-Headers PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "/usr/include")' \
+              'endif()' \
+              > /usr/local/lib/cmake/SPIRV-Headers/SPIRV-HeadersConfig.cmake
+          fi
 
       - name: Checkout repository
         uses: actions/checkout@v4
