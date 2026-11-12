@@ -191,9 +191,13 @@ public:
           addon_(addon),
           action_(action) {
         setCustomLabel(fcitx::Text(std::move(label)));
+#if SHADOWBAR_FCITX5_AT_LEAST(5, 1, 9)
         if (!comment.empty()) {
             setComment(std::move(comment));
         }
+#else
+        (void)comment;
+#endif
     }
 
     void select(fcitx::InputContext *ic) const override {
@@ -249,6 +253,7 @@ ShadowBarAddon::ShadowBarAddon(fcitx::Instance *instance)
       }),
       toggle_action_(this) {
     config_mgr_.ensureAndLoad();
+    event_dispatcher_.attach(&instance_->eventLoop());
     translator_.setCacheCapacity(config_mgr_.config().cache_size);
     translator_.reloadOfflineDictionaries(
         config_mgr_.config().effectiveOfflineDicts());
@@ -389,6 +394,7 @@ ShadowBarAddon::ShadowBarAddon(fcitx::Instance *instance)
 
 ShadowBarAddon::~ShadowBarAddon() {
     translator_.shutdown();
+    event_dispatcher_.detach();
 }
 
 void ShadowBarAddon::syncFcitxConfigFromToml() {
@@ -570,7 +576,7 @@ void ShadowBarAddon::hotReloadTomlIfNeeded() {
     }
 }
 
-bool ShadowBarAddon::isImeComposing(const fcitx::InputContext *ic) const {
+bool ShadowBarAddon::isImeComposing(fcitx::InputContext *ic) const {
     if (!ic) {
         return false;
     }
@@ -583,7 +589,7 @@ bool ShadowBarAddon::isImeComposing(const fcitx::InputContext *ic) const {
            !std::dynamic_pointer_cast<const ShadowBarCandidateList>(cand);
 }
 
-bool ShadowBarAddon::shouldShowBarForPanel(const fcitx::InputContext *ic,
+bool ShadowBarAddon::shouldShowBarForPanel(fcitx::InputContext *ic,
                                            const ShadowBarICState *state) const {
     if (!ic || !state) {
         return false;
@@ -1279,7 +1285,7 @@ void ShadowBarAddon::handleSessionActions(fcitx::InputContext *ic,
                 if (std::this_thread::get_id() == main_thread_id_) {
                     apply_update();
                 } else {
-                    instance_->eventDispatcher().schedule(
+                    event_dispatcher_.schedule(
                         [ic_ref, apply_update = std::move(apply_update)]() {
                             if (ic_ref.isValid()) {
                                 apply_update();

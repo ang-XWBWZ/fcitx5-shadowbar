@@ -55,6 +55,20 @@ bool sendTestKey(fcitx::AddonInstance *testfrontend,
 #endif
 }
 
+void assertNoActiveTranslationBar(fcitx::InputContext *ic) {
+    assert(ic->inputPanel().auxDown().empty());
+    assert(!ic->inputPanel().candidateList());
+#if SHADOWBAR_FCITX5_AT_LEAST(5, 1, 22)
+    assert(ic->inputPanel().auxUp().empty());
+#else
+    // Fcitx5 < 5.1.22 writes temporary toast messages into auxUp rather than overlayMessage().
+    const std::string up = ic->inputPanel().auxUp().toString();
+    assert(up.find("│") == std::string::npos);
+    assert(up.find("请输入") == std::string::npos);
+    assert(up.find("离线词典") == std::string::npos);
+#endif
+}
+
 std::filesystem::path setupTempConfigHome() {
     auto tmp_base =
         std::filesystem::temp_directory_path() / "shadowbar_fcitx5_test_cfg";
@@ -312,11 +326,10 @@ int main() {
                                fcitx::Key("Control+Shift+T"), true));
             ic->focusOut();
             ic->focusIn();
-            assert(ic->inputPanel().auxUp().empty());
+            assertNoActiveTranslationBar(ic);
             assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_h),
                                false));
-            assert(ic->inputPanel().auxUp().empty());
-            assert(ic->inputPanel().auxDown().empty());
+            assertNoActiveTranslationBar(ic);
 
             // Toggle back on -> resumes Sticky translation bar.
             assert(sendTestKey(testfrontend, uuid,
@@ -343,16 +356,7 @@ int main() {
             assert(sendTestKey(testfrontend, uuid, fcitx::Key("Alt+Shift+P"),
                                true)); // offline_test -> offline_natural
             assert(ic->inputPanel().preedit().empty());
-            assert(ic->inputPanel().auxDown().empty());
-            assert(!ic->inputPanel().candidateList());
-#if SHADOWBAR_FCITX5_AT_LEAST(5, 1, 22)
-            assert(ic->inputPanel().auxUp().empty());
-#else
-            assert(ic->inputPanel().auxUp().toString().find("请输入") ==
-                       std::string::npos &&
-                   ic->inputPanel().auxUp().toString().find("│") ==
-                       std::string::npos);
-#endif
+            assertNoActiveTranslationBar(ic);
 
             auto uuid2 =
                 testfrontend->call<fcitx::ITestFrontend::createInputContext>(

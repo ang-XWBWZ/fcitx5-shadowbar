@@ -13,6 +13,7 @@
 #else
 #include <fcitx-utils/event.h>
 #endif
+#include <fcitx-utils/eventdispatcher.h>
 #include <fcitx-utils/key.h>
 #include <fcitx-utils/signals.h>
 #include <fcitx/action.h>
@@ -172,8 +173,8 @@ private:
                      bool force_clear,
                      bool notify_ui = true);
 
-    bool isImeComposing(const fcitx::InputContext *ic) const;
-    bool shouldShowBarForPanel(const fcitx::InputContext *ic,
+    bool isImeComposing(fcitx::InputContext *ic) const;
+    bool shouldShowBarForPanel(fcitx::InputContext *ic,
                                const ShadowBarICState *state) const;
     bool isCjkInputMethod(fcitx::InputContext *ic) const;
     bool isStickyInputMethod(fcitx::InputContext *ic) const;
@@ -200,6 +201,7 @@ private:
 
     ConfigManager config_mgr_;
     ShadowBarFcitxConfig fcitx_config_;
+    fcitx::EventDispatcher event_dispatcher_;
     AsyncTranslationEngine translator_;
 
     fcitx::FactoryFor<ShadowBarICState> factory_;
