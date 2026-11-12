@@ -26,7 +26,34 @@
 #include <string>
 #include <vector>
 
+#ifndef SHADOWBAR_FCITX5_MAJOR
+#define SHADOWBAR_FCITX5_MAJOR 5
+#define SHADOWBAR_FCITX5_MINOR 0
+#define SHADOWBAR_FCITX5_PATCH 0
+#endif
+
+#define SHADOWBAR_FCITX5_AT_LEAST(major, minor, patch)                         \
+    ((SHADOWBAR_FCITX5_MAJOR > (major)) ||                                     \
+     (SHADOWBAR_FCITX5_MAJOR == (major) &&                                     \
+      (SHADOWBAR_FCITX5_MINOR > (minor) ||                                     \
+       (SHADOWBAR_FCITX5_MINOR == (minor) &&                                   \
+        SHADOWBAR_FCITX5_PATCH >= (patch)))))
+
 namespace {
+
+bool sendTestKey(fcitx::AddonInstance *testfrontend,
+                 const fcitx::ICUUID &uuid,
+                 const fcitx::Key &key,
+                 bool expect_accepted) {
+#if SHADOWBAR_FCITX5_AT_LEAST(5, 1, 0)
+    return testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
+               uuid, key, false) == expect_accepted;
+#else
+    (void)expect_accepted;
+    testfrontend->call<fcitx::ITestFrontend::keyEvent>(uuid, key, false);
+    return true;
+#endif
+}
 
 std::filesystem::path setupTempConfigHome() {
     auto tmp_base =
@@ -127,20 +154,19 @@ int main() {
 
             // Test 1: Sticky toggle via Ctrl+Shift+T + simulated Pinyin commit interception.
             // Note: Check whether CommitFilter clearing orig skips commitStringImpl or emits "".
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key("Control+Shift+T"), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key("Control+Shift+T"), true));
 
             // Type 'a' -> Pinyin preedit starts, ShadowBar shows alongside it.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_a), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_a), true));
             assert(!ic->inputPanel().preedit().empty());
             assert(!ic->inputPanel().auxUp().empty());
 
             // Press Space -> Pinyin calls commitString("你好"), ShadowBar intercepts it!
             // Fcitx5 CommitFilter clears orig to "", so commitStringImpl("") fires.
             testfrontend->call<fcitx::ITestFrontend::pushCommitExpectation>("");
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_space), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_space),
+                               true));
             assert(ic->inputPanel().auxUp().toString().find("你好") !=
                    std::string::npos);
             // Default compact mode: clean 2-line AuxUp + AuxDown with NO expanded action list.
@@ -149,8 +175,8 @@ int main() {
                    std::string::npos);
 
             // Pressing Down once transiently expands interactive 5-row action card.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Down), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Down),
+                               true));
             {
                 auto cand = ic->inputPanel().candidateList();
                 assert(cand && cand->size() == 5);
@@ -163,51 +189,52 @@ int main() {
 
             // Down moves highlight to Row 1 (原文), Up brings it back to Row 0,
             // and pressing Up at Row 0 collapses back to compact mode!
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Down), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Down),
+                               true));
             assert(ic->inputPanel().candidateList()->cursorIndex() == 1);
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Up), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Up),
+                               true));
             assert(ic->inputPanel().candidateList()->cursorIndex() == 0);
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Up), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Up),
+                               true));
             assert(!ic->inputPanel().candidateList());
             assert(ic->inputPanel().auxDown().toString().find("hello") !=
                    std::string::npos);
 
             // Re-expand once to verify Return on highlighted candidate works too.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Down), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Down),
+                               true));
             assert(ic->inputPanel().candidateList() &&
                    ic->inputPanel().candidateList()->size() == 5);
 
             // Press Return -> commits translated English "hello" to TestFrontend!
             testfrontend->call<fcitx::ITestFrontend::pushCommitExpectation>(
                 "hello");
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Return), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Return),
+                               true));
             assert(ic->inputPanel().auxUp().empty());
             assert(!ic->inputPanel().candidateList());
 
             // Return on empty Sticky passes through (!filtered -> sendKeyEvent returns false).
-            assert(!testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Return), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Return),
+                               false));
+            assert(ic->inputPanel().auxUp().empty());
 
             // Toggle Sticky back Off.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key("Control+Shift+T"), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key("Control+Shift+T"), true));
 
             // Test 2: ";;" prefix OneShot + Shift+Enter raw fallback.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_semicolon), false));
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_semicolon), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key(FcitxKey_semicolon), true));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key(FcitxKey_semicolon), true));
             assert(ic->inputPanel().auxUp().toString().find("请输入") !=
                    std::string::npos);
             // Compact idle OneShot: no candidate popup unless user presses Down.
             assert(!ic->inputPanel().candidateList());
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Down), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Down),
+                               true));
             {
                 auto idle_cand = ic->inputPanel().candidateList();
                 assert(idle_cand && idle_cand->size() == 3);
@@ -215,29 +242,30 @@ int main() {
                 assert(idle_cand->candidate(2).text().toString().find("切回纯中文") !=
                        std::string::npos);
             }
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Up), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Up),
+                               true));
             assert(!ic->inputPanel().candidateList());
 
             testfrontend->call<fcitx::ITestFrontend::pushCommitExpectation>("");
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_b), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_b), true));
             assert(ic->inputPanel().auxUp().toString().find("测试") !=
                    std::string::npos);
 
             // Alt+L cycles target language live on the panel (中→EN -> 中→日 -> 中→EN).
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_l, fcitx::KeyState::Alt), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key(FcitxKey_l, fcitx::KeyState::Alt),
+                               true));
             assert(ic->inputPanel().auxUp().toString().find("中→日") !=
                    std::string::npos);
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_l, fcitx::KeyState::Alt), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key(FcitxKey_l, fcitx::KeyState::Alt),
+                               true));
             assert(ic->inputPanel().auxUp().toString().find("中→EN") !=
                    std::string::npos);
 
             // Expand with Down, then select Row 1 (click / select(ic)) commits raw "测试" and exits OneShot.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Down), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Down),
+                               true));
             testfrontend->call<fcitx::ITestFrontend::pushCommitExpectation>(
                 "测试");
             assert(ic->inputPanel().candidateList() &&
@@ -247,10 +275,12 @@ int main() {
 
             // Test 3: Password capability ignores Ctrl+Shift+T and ";;".
             ic->setCapabilityFlags(fcitx::CapabilityFlag::Password);
-            assert(!testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key("Control+Shift+T"), false));
-            assert(!testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_semicolon), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key("Control+Shift+T"), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key(FcitxKey_semicolon), false));
+            assert(ic->inputPanel().auxUp().empty());
+            assert(!ic->inputPanel().candidateList());
 
             // Test 4: Dedicated "shadowbar" InputMethod loads & auto-enables Sticky mode.
             ic->setCapabilityFlags(fcitx::CapabilityFlags{});
@@ -265,55 +295,64 @@ int main() {
             assert(instance.inputMethod(ic) == "shadowbar");
             auto *shadowbarim = instance.addonManager().addon("shadowbarim");
             assert(shadowbarim != nullptr);
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_h), false));
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_i), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_h), true));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_i), true));
             assert(ic->inputPanel().auxUp().toString().find("hi") !=
                    std::string::npos);
             assert(ic->inputPanel().auxUp().toString().find("EN→中") !=
                    std::string::npos);
             testfrontend->call<fcitx::ITestFrontend::pushCommitExpectation>(
                 "hi");
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Return, fcitx::KeyState::Shift),
-                false));
+            assert(sendTestKey(
+                testfrontend, uuid,
+                fcitx::Key(FcitxKey_Return, fcitx::KeyState::Shift), true));
 
             // Toggle off from "shadowbar" IM -> stays in pure-Chinese passthrough even across focus change.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key("Control+Shift+T"), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key("Control+Shift+T"), true));
             ic->focusOut();
             ic->focusIn();
             assert(ic->inputPanel().auxUp().empty());
-            assert(!testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_h), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_h),
+                               false));
+            assert(ic->inputPanel().auxUp().empty());
+            assert(ic->inputPanel().auxDown().empty());
 
             // Toggle back on -> resumes Sticky translation bar.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key("Control+Shift+T"), false));
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_h), false));
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key("Control+Shift+T"), true));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_h), true));
             assert(ic->inputPanel().auxUp().toString().find("h") !=
                    std::string::npos);
             testfrontend->call<fcitx::ITestFrontend::pushCommitExpectation>(
                 "h");
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Return, fcitx::KeyState::Shift),
-                false));
+            assert(sendTestKey(
+                testfrontend, uuid,
+                fcitx::Key(FcitxKey_Return, fcitx::KeyState::Shift), true));
 
             instance.setCurrentInputMethod(ic, "keyboard-us", true);
-            assert(!testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key(FcitxKey_Return), false));
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_Return),
+                               false));
 
             // Test 5: Global Alt+Shift+L & Alt+Shift+P work when ShadowBar is Off,
             // keep panel closed, and persist across other windows and future activations.
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key("Alt+Shift+L"), false)); // en -> zh
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key("Alt+Shift+L"), false)); // zh -> ja
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid, fcitx::Key("Alt+Shift+P"), false)); // offline_test -> offline_natural
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key("Alt+Shift+L"),
+                               true)); // en -> zh
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key("Alt+Shift+L"),
+                               true)); // zh -> ja
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key("Alt+Shift+P"),
+                               true)); // offline_test -> offline_natural
+            assert(ic->inputPanel().preedit().empty());
+            assert(ic->inputPanel().auxDown().empty());
+            assert(!ic->inputPanel().candidateList());
+#if SHADOWBAR_FCITX5_AT_LEAST(5, 1, 22)
             assert(ic->inputPanel().auxUp().empty());
+#else
+            assert(ic->inputPanel().auxUp().toString().find("请输入") ==
+                       std::string::npos &&
+                   ic->inputPanel().auxUp().toString().find("│") ==
+                       std::string::npos);
+#endif
 
             auto uuid2 =
                 testfrontend->call<fcitx::ITestFrontend::createInputContext>(
@@ -323,10 +362,10 @@ int main() {
             ic2->focusIn();
             instance.setCurrentInputMethod(ic2, "pinyin", true);
             // Trigger ";;" in second window -> remembers 中→日 + 自然离线!
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid2, fcitx::Key(FcitxKey_semicolon), false));
-            assert(testfrontend->call<fcitx::ITestFrontend::sendKeyEvent>(
-                uuid2, fcitx::Key(FcitxKey_semicolon), false));
+            assert(sendTestKey(testfrontend, uuid2,
+                               fcitx::Key(FcitxKey_semicolon), true));
+            assert(sendTestKey(testfrontend, uuid2,
+                               fcitx::Key(FcitxKey_semicolon), true));
             assert(ic2->inputPanel().auxUp().toString().find("中→日") !=
                    std::string::npos);
             assert(ic2->inputPanel().auxUp().toString().find("自然离线") !=

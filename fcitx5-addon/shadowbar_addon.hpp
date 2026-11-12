@@ -8,7 +8,11 @@
 #include <fcitx-config/configuration.h>
 #include <fcitx-config/enum.h>
 #include <fcitx-config/option.h>
+#if defined(__has_include) && __has_include(<fcitx-utils/eventloopinterface.h>)
 #include <fcitx-utils/eventloopinterface.h>
+#else
+#include <fcitx-utils/event.h>
+#endif
 #include <fcitx-utils/key.h>
 #include <fcitx-utils/signals.h>
 #include <fcitx/action.h>

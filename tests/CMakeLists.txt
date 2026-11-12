@@ -10,8 +10,24 @@ target_compile_options(test_core PRIVATE -Wall -Wextra -Wpedantic)
 add_test(NAME shadowbar_core_tests COMMAND test_core)
 
 if(BUILD_FCITX5_ADDON)
+    find_package(Fcitx5Core REQUIRED)
     find_package(Fcitx5ModuleTestFrontend REQUIRED)
     find_package(Fcitx5ModuleTestIM REQUIRED)
+
+    string(REGEX MATCHALL "[0-9]+" _shadowbar_test_fcitx_ver "${Fcitx5Core_VERSION}")
+    set(SHADOWBAR_TEST_FCITX5_MAJOR 5)
+    set(SHADOWBAR_TEST_FCITX5_MINOR 0)
+    set(SHADOWBAR_TEST_FCITX5_PATCH 0)
+    list(LENGTH _shadowbar_test_fcitx_ver _shadowbar_test_fcitx_ver_len)
+    if(_shadowbar_test_fcitx_ver_len GREATER 0)
+        list(GET _shadowbar_test_fcitx_ver 0 SHADOWBAR_TEST_FCITX5_MAJOR)
+    endif()
+    if(_shadowbar_test_fcitx_ver_len GREATER 1)
+        list(GET _shadowbar_test_fcitx_ver 1 SHADOWBAR_TEST_FCITX5_MINOR)
+    endif()
+    if(_shadowbar_test_fcitx_ver_len GREATER 2)
+        list(GET _shadowbar_test_fcitx_ver 2 SHADOWBAR_TEST_FCITX5_PATCH)
+    endif()
 
     configure_file(
         "${CMAKE_CURRENT_SOURCE_DIR}/testdata/addon/shadowbar.conf.in"
@@ -61,6 +77,9 @@ if(BUILD_FCITX5_ADDON)
             SHADOWBAR_TEST_DATA_DIR="${CMAKE_CURRENT_BINARY_DIR}/testdata"
             SHADOWBAR_FCITX5_ADDON_DIR="${FCITX_INSTALL_ADDONDIR}"
             SHADOWBAR_FCITX5_DATADIR="${FCITX_INSTALL_PKGDATADIR}"
+            SHADOWBAR_FCITX5_MAJOR=${SHADOWBAR_TEST_FCITX5_MAJOR}
+            SHADOWBAR_FCITX5_MINOR=${SHADOWBAR_TEST_FCITX5_MINOR}
+            SHADOWBAR_FCITX5_PATCH=${SHADOWBAR_TEST_FCITX5_PATCH}
     )
     target_compile_options(test_fcitx5_integration PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME shadowbar_fcitx5_integration COMMAND test_fcitx5_integration)

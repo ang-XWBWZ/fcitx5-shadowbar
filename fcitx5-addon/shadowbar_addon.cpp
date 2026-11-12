@@ -329,11 +329,12 @@ ShadowBarAddon::ShadowBarAddon(fcitx::Instance *instance)
                                       return;
                                   }
                                   if (ev.name() == "shadowbar") {
-                                      state->im_user_paused = false;
-                                      state->im_forced_sticky = true;
-                                      if (state->session.mode() != Mode::Sticky) {
-                                          auto act = state->session.enterSticky(true);
-                                          handleSessionActions(ic, state, act);
+                                      if (!state->im_user_paused) {
+                                          state->im_forced_sticky = true;
+                                          if (state->session.mode() != Mode::Sticky) {
+                                              auto act = state->session.enterSticky(true);
+                                              handleSessionActions(ic, state, act);
+                                          }
                                       }
                                   } else if (state->im_forced_sticky || state->im_user_paused) {
                                       state->im_forced_sticky = false;
@@ -359,7 +360,8 @@ ShadowBarAddon::ShadowBarAddon(fcitx::Instance *instance)
                                       state && ev.name() == "shadowbar") {
                                       const bool was_forced = state->im_forced_sticky;
                                       state->im_forced_sticky = false;
-                                      state->im_user_paused = false;
+                                      // Preserve im_user_paused across focusOut/focusIn deactivation
+                                      // (e.g. Fcitx5 <= 5.1.12); only switching to another IM clears it.
                                       if (was_forced && state->session.mode() != Mode::Off) {
                                           auto act = state->session.exitToOff();
                                           handleSessionActions(ic, state, act);
