@@ -1,3 +1,16 @@
+fcitx5-shadowbar (0.1.1-1) unstable; urgency=medium
+
+  * Popup-only clipboard monitoring & local model idle auto-unload:
+    - Limit Wayland/X11 background clipboard subscriptions to active popup display
+    - Auto-unload local Hunyuan HY-MT1.5 llama-server after configurable idle timeout
+    - Add `--wake-ty` on-demand wake support and single-slot KV optimization (`-np 1`)
+  * Floating UI modernization & theme polish:
+    - Reorganized card header chrome and dedicated language/preset control bar
+    - Corrected model labels to Hunyuan HY-MT1.5 across UI and documentation
+    - Adaptive light/dark/accent system theme following and opaque dropdown/menu popups
+
+ -- ang <ang-XWBWZ@users.noreply.github.com>  Thu, 12 Nov 2026 02:20:00 -0500
+
 fcitx5-shadowbar (0.1.0-1) unstable; urgency=medium
 
   * Initial public non-commercial open-source release:

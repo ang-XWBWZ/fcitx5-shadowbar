@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(fcitx5-shadowbar VERSION 0.1.0 LANGUAGES CXX)
+project(fcitx5-shadowbar VERSION 0.1.1 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 

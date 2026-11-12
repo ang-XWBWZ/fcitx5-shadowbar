@@ -158,7 +158,7 @@ In `shadowbar-float --settings` (Tab 2) or `[floating]` in `config.toml`, enable
 ## 7. Optional: Local Hunyuan HY-MT1.5-1.8B Model (`1.25bit` / `2bit`)
 
 1. Install or build `llama-server` (`llama.cpp`) on your system or place it at `~/.local/share/shadowbar/bin/llama-server`.
-2. Open `shadowbar-float --settings` -> **Tab 3: `TY 模型 (1.25bit/2bit)`**.
+2. Open `shadowbar-float --settings` -> **Tab 3: `混元 HY-MT1.5 (1.25bit/2bit)`**.
 3. Choose **1.25bit (`STQ1_0`, ~441 MB)** or **2bit (`Q2_0C`, ~573 MB)** (or point to a custom `.gguf`), pick **HuggingFace** or **HF-Mirror**, download, and start the local server.
 4. Set backend to **`auto`** (Vulkan GPU preferred with automatic CPU fallback), **`vulkan`**, or **`cpu`**.
 

@@ -218,6 +218,15 @@ void clearShadowBarCandidateList(fcitx::InputPanel &panel) {
     }
 }
 
+bool isLocalHyMtPreset(const Preset &preset) {
+    if (!isHyMtModelName(preset.model)) {
+        return false;
+    }
+    return preset.endpoint.find("127.0.0.1") != std::string::npos ||
+           preset.endpoint.find("localhost") != std::string::npos ||
+           preset.endpoint.find("[::1]") != std::string::npos;
+}
+
 } // namespace
 
 ShadowBarToggleAction::ShadowBarToggleAction(ShadowBarAddon *addon)
@@ -1215,6 +1224,30 @@ void ShadowBarAddon::renderPanel(fcitx::InputContext *ic,
     }
 }
 
+void ShadowBarAddon::maybeWakeLocalTy(const ShadowConfig &cfg,
+                                      bool is_local_hymt,
+                                      bool force_on_error) {
+    if (!is_local_hymt || !cfg.hymt_auto_start) {
+        return;
+    }
+    const auto now = SteadyClock::now();
+    if (last_ty_wake_attempt_ != SteadyTimePoint{} &&
+        now - last_ty_wake_attempt_ < std::chrono::seconds(5)) {
+        return;
+    }
+    if (!force_on_error && last_local_hymt_ok_ != SteadyTimePoint{}) {
+        const int check_window_sec =
+            cfg.hymt_idle_unload_sec > 0
+                ? std::max(10, cfg.hymt_idle_unload_sec - 10)
+                : 300;
+        if (now - last_local_hymt_ok_ < std::chrono::seconds(check_window_sec)) {
+            return;
+        }
+    }
+    last_ty_wake_attempt_ = now;
+    launchFloatingUi("--wake-ty");
+}
+
 void ShadowBarAddon::handleSessionActions(fcitx::InputContext *ic,
                                           ShadowBarICState *state,
                                           const SessionActions &actions) {
@@ -1244,6 +1277,8 @@ void ShadowBarAddon::handleSessionActions(fcitx::InputContext *ic,
         const auto &cfg = config_mgr_.config();
         const auto vm = state->session.viewModel();
         Preset active_preset = state->session.activePreset();
+        const bool is_local_hymt = isLocalHyMtPreset(active_preset);
+        maybeWakeLocalTy(cfg, is_local_hymt, false);
         const int effective_timeout_ms =
             (active_preset.provider == ProviderKind::OpenAICompatible ||
              active_preset.provider == ProviderKind::Ollama)
@@ -1267,8 +1302,16 @@ void ShadowBarAddon::handleSessionActions(fcitx::InputContext *ic,
         auto ic_ref = ic->watch();
         translator_.submit(
             std::move(job),
-            [this, ic_ref](uint64_t rev, const TranslationResult &res) {
-                auto apply_update = [this, ic_ref, rev, res]() {
+            [this, ic_ref, is_local_hymt](uint64_t rev,
+                                          const TranslationResult &res) {
+                auto apply_update = [this, ic_ref, is_local_hymt, rev, res]() {
+                    if (is_local_hymt) {
+                        if (res.ok) {
+                            last_local_hymt_ok_ = SteadyClock::now();
+                        } else if (res.is_final) {
+                            maybeWakeLocalTy(config_mgr_.config(), true, true);
+                        }
+                    }
                     auto *target_ic = ic_ref.get();
                     if (!target_ic) {
                         return;

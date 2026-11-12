@@ -42,6 +42,7 @@ public:
 
     void setWatchEnabled(bool enabled);
     bool isWatchEnabled() const { return watch_enabled_; }
+    bool hasActiveBackgroundWatch() const;
 
     /// Triggers a one-shot async clipboard probe (e.g. when card opens or manual read button clicked).
     void requestProbe(bool force);
@@ -59,8 +60,12 @@ private slots:
     void executePendingProbe();
 
 private:
+    void syncBackgroundSubscriptions(bool enabled);
     void startWaylandWatch();
     void stopWaylandWatch();
+
+    QMetaObject::Connection qt_clipboard_conn_;
+    bool probe_is_forced_ = false;
     bool tryReadFromQtClipboard(bool force);
     void startAsyncWlPasteListTypes(bool force);
     void startAsyncWlPasteReadText(const QString &mime_type, bool force);

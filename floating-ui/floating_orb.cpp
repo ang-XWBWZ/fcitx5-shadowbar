@@ -1,5 +1,6 @@
 #include "floating_orb.hpp"
 #include "theme_util.hpp"
+#include "ui_util.hpp"
 #include "window_pin_util.hpp"
 
 #include <QContextMenuEvent>
@@ -73,7 +74,8 @@ void FloatingOrb::setRememberedPosition(bool has_pos, const QPoint &pos) {
 
 void FloatingOrb::changeEvent(QEvent *event) {
     if (event->type() == QEvent::ApplicationPaletteChange ||
-        event->type() == QEvent::PaletteChange) {
+        event->type() == QEvent::PaletteChange ||
+        event->type() == QEvent::ThemeChange) {
         applyTheme();
     }
     QWidget::changeEvent(event);
@@ -145,6 +147,7 @@ void FloatingOrb::mouseReleaseEvent(QMouseEvent *event) {
 
 void FloatingOrb::contextMenuEvent(QContextMenuEvent *event) {
     QMenu menu(this);
+    applyOpaqueMenuTheme(&menu, resolveThemeTokens());
     menu.addAction("打开翻译悬浮窗", this, &FloatingOrb::openCardRequested);
     menu.addAction("读取剪贴板并翻译", this, &FloatingOrb::readClipboardRequested);
     menu.addAction("重置悬浮窗位置与大小", this, &FloatingOrb::resetWindowRequested);

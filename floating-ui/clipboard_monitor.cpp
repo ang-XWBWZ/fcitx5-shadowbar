@@ -299,29 +299,82 @@ ClipboardMonitor::ClipboardMonitor(QObject *parent) : QObject(parent) {
     debounce_timer_->setInterval(45);
     connect(debounce_timer_, &QTimer::timeout, this,
             &ClipboardMonitor::executePendingProbe);
+    // Zero background overhead until setWatchEnabled(true) is armed while popup is visible.
+}
 
-    if (QClipboard *cb = QGuiApplication::clipboard()) {
-        connect(cb, &QClipboard::dataChanged, this,
-                &ClipboardMonitor::onQtClipboardChanged);
+ClipboardMonitor::~ClipboardMonitor() {
+    syncBackgroundSubscriptions(false);
+    if (wl_probe_proc_) {
+        wl_probe_proc_->disconnect(this);
+        wl_probe_proc_->kill();
+        wl_probe_proc_->waitForFinished(100);
+        wl_probe_proc_ = nullptr;
+    }
+}
+
+bool ClipboardMonitor::hasActiveBackgroundWatch() const {
+    return watch_enabled_ &&
+           (static_cast<bool>(qt_clipboard_conn_) || klipper_connected_ ||
+            wl_watch_proc_ != nullptr);
+}
+
+void ClipboardMonitor::syncBackgroundSubscriptions(bool enabled) {
+    if (enabled) {
+        if (!qt_clipboard_conn_) {
+            if (QClipboard *cb = QGuiApplication::clipboard()) {
+                qt_clipboard_conn_ = connect(cb, &QClipboard::dataChanged, this,
+                                             &ClipboardMonitor::onQtClipboardChanged);
+            }
+        }
+        if (is_wayland_) {
+            if (!klipper_connected_) {
+                klipper_connected_ = QDBusConnection::sessionBus().connect(
+                    QStringLiteral("org.kde.klipper"),
+                    QStringLiteral("/klipper"),
+                    QStringLiteral("org.kde.klipper.klipper"),
+                    QStringLiteral("clipboardHistoryUpdated"),
+                    this,
+                    SLOT(onExternalChangeSignal()));
+            }
+            if (!wl_paste_bin_.isEmpty()) {
+                startWaylandWatch();
+            }
+        }
+        return;
     }
 
-    if (is_wayland_) {
-        klipper_connected_ = QDBusConnection::sessionBus().connect(
+    if (qt_clipboard_conn_) {
+        QObject::disconnect(qt_clipboard_conn_);
+        qt_clipboard_conn_ = {};
+    }
+    if (klipper_connected_) {
+        QDBusConnection::sessionBus().disconnect(
             QStringLiteral("org.kde.klipper"),
             QStringLiteral("/klipper"),
             QStringLiteral("org.kde.klipper.klipper"),
             QStringLiteral("clipboardHistoryUpdated"),
             this,
             SLOT(onExternalChangeSignal()));
+        klipper_connected_ = false;
     }
-}
-
-ClipboardMonitor::~ClipboardMonitor() {
     stopWaylandWatch();
-    if (wl_probe_proc_) {
-        wl_probe_proc_->kill();
-        wl_probe_proc_->waitForFinished(100);
-        wl_probe_proc_ = nullptr;
+    rerun_after_flight_ = false;
+    if (!pending_force_ && debounce_timer_) {
+        debounce_timer_->stop();
+    }
+    if (probe_in_flight_ && !probe_is_forced_) {
+        probe_in_flight_ = false;
+        if (wl_probe_proc_) {
+            QProcess *proc = wl_probe_proc_;
+            wl_probe_proc_ = nullptr;
+            proc->disconnect(this);
+            proc->terminate();
+            if (!proc->waitForFinished(80)) {
+                proc->kill();
+                proc->waitForFinished(60);
+            }
+            proc->deleteLater();
+        }
     }
 }
 
@@ -330,13 +383,7 @@ void ClipboardMonitor::setWatchEnabled(bool enabled) {
         return;
     }
     watch_enabled_ = enabled;
-    if (watch_enabled_) {
-        if (is_wayland_ && !wl_paste_bin_.isEmpty()) {
-            startWaylandWatch();
-        }
-    } else {
-        stopWaylandWatch();
-    }
+    syncBackgroundSubscriptions(watch_enabled_);
 }
 
 void ClipboardMonitor::markSelfCopiedText(const QString &text) {
@@ -438,9 +485,11 @@ void ClipboardMonitor::executePendingProbe() {
 
     if (is_wayland_ && !wl_paste_bin_.isEmpty()) {
         probe_in_flight_ = true;
+        probe_is_forced_ = force;
         startAsyncWlPasteListTypes(force);
     } else if (klipper_connected_ || is_wayland_) {
         probe_in_flight_ = true;
+        probe_is_forced_ = force;
         startAsyncKlipperFallback(force);
     } else if (force) {
         emit clipboardAvoided(ClipboardAvoidReason::Empty, true);
@@ -517,9 +566,12 @@ bool ClipboardMonitor::tryReadFromQtClipboard(bool force) {
 
 void ClipboardMonitor::finishProbeFlight() {
     probe_in_flight_ = false;
-    if (rerun_after_flight_) {
+    probe_is_forced_ = false;
+    if (rerun_after_flight_ && (watch_enabled_ || pending_force_)) {
         rerun_after_flight_ = false;
         debounce_timer_->start(30);
+    } else {
+        rerun_after_flight_ = false;
     }
 }
 

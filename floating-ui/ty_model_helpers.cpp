@@ -3,8 +3,12 @@
 #include "shadowbar/translator.hpp"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QUrl>
@@ -63,7 +67,7 @@ TyModelSpec tyModelSpec(const QString &variant) {
             .display_name = QStringLiteral("混元 HY-MT1.5-1.8B · 1.25bit (STQ1_0)"),
             .size_hint = QStringLiteral("约 441 MB"),
             .preset_id = QStringLiteral("ty_125bit"),
-            .preset_label = QStringLiteral("TY 1.25bit"),
+            .preset_label = QStringLiteral("混元 HY-MT1.5 (1.25bit)"),
             .model_name = QStringLiteral("hy-mt1.5-1.8b-1.25bit"),
             .default_filename = QStringLiteral("Hy-MT1.5-1.8B-1.25bit.gguf"),
             .repo_subpath = QStringLiteral(
@@ -74,10 +78,10 @@ TyModelSpec tyModelSpec(const QString &variant) {
     if (norm == QLatin1String("custom")) {
         return {
             .id = QStringLiteral("custom"),
-            .display_name = QStringLiteral("自定义 HY-MT GGUF 模型"),
+            .display_name = QStringLiteral("混元 HY-MT1.5 · 自定义本地 GGUF"),
             .size_hint = QStringLiteral("本地文件"),
             .preset_id = QStringLiteral("ty_custom"),
-            .preset_label = QStringLiteral("TY 自定义"),
+            .preset_label = QStringLiteral("混元 HY-MT1.5 (自定义)"),
             .model_name = QStringLiteral("hy-mt1.5-custom"),
             .default_filename = {},
             .repo_subpath = {},
@@ -88,7 +92,7 @@ TyModelSpec tyModelSpec(const QString &variant) {
         .display_name = QStringLiteral("混元 HY-MT1.5-1.8B · 2bit (Q2_0C)"),
         .size_hint = QStringLiteral("约 573 MB"),
         .preset_id = QStringLiteral("ty_2bit"),
-        .preset_label = QStringLiteral("TY 2bit"),
+        .preset_label = QStringLiteral("混元 HY-MT1.5 (2bit)"),
         .model_name = QStringLiteral("hy-mt1.5-1.8b-2bit"),
         .default_filename = QStringLiteral("Hy-MT1.5-1.8B-2bit.gguf"),
         .repo_subpath = QStringLiteral(
@@ -182,6 +186,7 @@ QStringList buildTyServerArgs(const QString &model_path,
          << QStringLiteral("--host") << QStringLiteral("127.0.0.1")
          << QStringLiteral("--port") << QString::number(clampPort(port))
          << QStringLiteral("-c") << QString::number(std::clamp(ctx_size, 512, 8192))
+         << QStringLiteral("-np") << QStringLiteral("1")
          << QStringLiteral("-ngl") << QString::number(std::max(0, gpu_layers))
          << QStringLiteral("-lv") << QStringLiteral("4");
     if (threads > 0) {
@@ -196,6 +201,60 @@ QString tyChatCompletionsEndpoint(int port) {
 
 QString tyHealthEndpoint(int port) {
     return QStringLiteral("http://127.0.0.1:%1/health").arg(clampPort(port));
+}
+
+QString tySlotsEndpoint(int port) {
+    return QStringLiteral("http://127.0.0.1:%1/slots").arg(clampPort(port));
+}
+
+bool shouldUnloadIdleTyModel(bool managed_running,
+                             int idle_unload_sec,
+                             qint64 elapsed_idle_ms,
+                             int active_requests) {
+    if (!managed_running || idle_unload_sec <= 0 || active_requests > 0) {
+        return false;
+    }
+    return elapsed_idle_ms >= static_cast<qint64>(idle_unload_sec) * 1000LL;
+}
+
+bool parseLlamaSlotsBusy(const QByteArray &slots_json) {
+    QJsonParseError err{};
+    const QJsonDocument doc = QJsonDocument::fromJson(slots_json, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isArray()) {
+        return false;
+    }
+    const QJsonArray arr = doc.array();
+    for (const QJsonValue &val : arr) {
+        if (!val.isObject()) {
+            continue;
+        }
+        const QJsonObject obj = val.toObject();
+        if (obj.value(QStringLiteral("is_processing")).toBool(false)) {
+            return true;
+        }
+        if (obj.contains(QStringLiteral("state")) &&
+            obj.value(QStringLiteral("state")).toInt(0) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+qint64 readExternalHyMtActivityAgeMs() {
+    const std::string path = hyMtActivityStampPath();
+    if (path.empty()) {
+        return -1;
+    }
+    const QFileInfo fi(QString::fromStdString(path));
+    if (!fi.exists()) {
+        return -1;
+    }
+    const qint64 modified_ms = fi.lastModified().toMSecsSinceEpoch();
+    const qint64 now_ms = QDateTime::currentMSecsSinceEpoch();
+    if (modified_ms <= 0 || now_ms < modified_ms) {
+        return -1;
+    }
+    return now_ms - modified_ms;
 }
 
 Preset makeTyPreset(const QString &variant,

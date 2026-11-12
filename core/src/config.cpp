@@ -670,6 +670,8 @@ bool ConfigManager::parseToml(std::string_view content, ShadowConfig &out,
                 out.hymt_port = std::clamp(val_int, 1024, 65535);
             } else if (key == "threads" && parseInt(val_raw, val_int)) {
                 out.hymt_threads = std::clamp(val_int, 0, 256);
+            } else if (key == "idle_unload_sec" && parseInt(val_raw, val_int)) {
+                out.hymt_idle_unload_sec = std::clamp(val_int, 0, 86400);
             } else if (key == "mirror" && parseTomlValueString(val_raw, val_str)) {
                 if (val_str == "huggingface" || val_str == "hf-mirror") {
                     out.hymt_mirror = val_str;
@@ -814,6 +816,7 @@ std::string ConfigManager::serializeToml(const ShadowConfig &cfg) {
     out << "backend = \"" << escapeTomlString(cfg.hymt_backend) << "\"\n";
     out << "port = " << std::clamp(cfg.hymt_port, 1024, 65535) << "\n";
     out << "threads = " << std::clamp(cfg.hymt_threads, 0, 256) << "\n";
+    out << "idle_unload_sec = " << std::clamp(cfg.hymt_idle_unload_sec, 0, 86400) << "\n";
     out << "mirror = \"" << escapeTomlString(cfg.hymt_mirror) << "\"\n";
     out << "server_path = \"" << escapeTomlString(cfg.hymt_server_path) << "\"\n";
     out << "model_125bit_path = \"" << escapeTomlString(cfg.hymt_model_125bit_path)

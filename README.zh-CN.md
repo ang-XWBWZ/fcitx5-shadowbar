@@ -33,7 +33,7 @@
 ```
 
 - **秒呼秒收 & 桌面悬浮球**：按 `Alt+Shift+Q` 随时呼出/隐藏翻译弹窗，也支持开启边缘悬浮球（左键展开、拖动定位、右键菜单）。
-- **Wayland 后台无焦点剪贴板监听**：融合 `wl-paste --watch`、KDE Klipper D-Bus 与 `QClipboard`，**无需聚焦或置顶弹窗**即可后台感知复制并自动刷新译文。
+- **弹窗期间无焦点剪贴板监听（后台零常驻监听）**：融合 `wl-paste --watch`、KDE Klipper D-Bus 与 `QClipboard`，**仅在翻译弹窗显示时激活监听**，无需点击聚焦弹窗即可自动翻译新复制文本；弹窗收起或关闭即刻断联并停止相关探测进程。
 - **智能避让敏感与非文本内容**：自动跳过密码管理器敏感提示、本地文件路径（`/home/...`、`file://`）、网址 URL、Markdown 链接与二进制负载，避免误译与隐私泄露。
 - **弹窗专属效率操作**：
   - **20 语种自动识别 & 一键互换**：`Alt+S` 秒换源/目标语种，`Alt+V` 主动读取剪贴板。
@@ -69,7 +69,7 @@ ShadowBar 内建统一翻译调度引擎（`core/`），可自由组合在线 AP
 | --- | --- | --- |
 | **云端大模型 / API** | OpenAI 兼容接口（DeepSeek / GPT / 自定义）、DeepL、Ollama | 支持自定义 `Prompt` 预设（直译 / 自然 / 职场 / 学术），自动异步防抖 |
 | **免配置在线引擎** | Google Free | 开箱即用、无需 API Key，支持 20 语种自动识别互译 |
-| **本地轻量 AI 模型** | **腾讯混元 `HY-MT1.5-1.8B`**（`1.25bit` ~441MB / `2bit` ~573MB / 自定义 `.gguf`） | 设置页内置 `HuggingFace` / `HF-Mirror` 下载与 `llama-server` 启停，默认 **`auto`（优先 Vulkan GPU，无 GPU 自动回退 CPU）** |
+| **本地轻量 AI 模型** | **腾讯混元 `HY-MT1.5-1.8B`**（`1.25bit` ~441MB / `2bit` ~573MB / 自定义 `.gguf`） | 设置页内置 `HuggingFace` / `HF-Mirror` 下载、单槽低开销 `llama-server` 启停（默认 `auto` 优先 Vulkan、回退 CPU）与 **长时间空闲自动卸载 / 按需秒拉起** |
 | **毫秒级本地离线词库** | ECDICT（`.db`/`.sqlite`/`.csv`）、StarDict（`.ifo`/`.idx`/`.dict.dz`）、CC-CEDICT（`.u8`）、JSON/JSONL、TSV | 断网兜底 + 单词短语瞬时响应；支持多语种外部词典同时挂载与优先级配置 |
 
 **统一支持 20 种常用语言（加 `auto` 自动检测）**：`en`、`zh`、`zh-TW`、`ja`、`ko`、`fr`、`de`、`es`、`pt`、`ru`、`it`、`ar`、`th`、`vi`、`id`、`hi`、`nl`、`pl`、`tr`、`uk`。
@@ -102,7 +102,7 @@ ctest --test-dir build --output-on-failure -V
 # 用户级安装到 ~/.local（无需 root）
 ./scripts/install_user.sh
 
-# 打开设置与翻译弹窗（内含 API 预设、TY 本地模型、词典导入与新主机中文环境一键修复）
+# 打开设置与翻译弹窗（内含 API 预设、腾讯混元 HY-MT1.5 本地模型、词典导入与新主机中文环境一键修复）
 shadowbar-float --settings
 ```
 
@@ -117,7 +117,7 @@ shadowbar-float --settings
 | 路径 | 职责说明 | 授权协议 |
 | --- | --- | --- |
 | `core/` | C++20 核心翻译引擎、会话状态机、20 语种路由、TOML 热重载配置、智能分句与多格式离线词库 | `PolyForm-Noncommercial-1.0.0` |
-| `floating-ui/` | `shadowbar-float` Qt6 翻译弹窗、桌面悬浮球、Wayland/X11 剪贴板监听、TY 模型管家与中文环境修复 | `PolyForm-Noncommercial-1.0.0` |
+| `floating-ui/` | `shadowbar-float` Qt6 翻译弹窗、桌面悬浮球、Wayland/X11 剪贴板监听、腾讯混元 HY-MT1.5 模型管家与中文环境修复 | `PolyForm-Noncommercial-1.0.0` |
 | `fcitx5-addon/` | `libshadowbar.so` 伴随翻译插件、`libshadowbarim.so` 虚拟输入法及配置描述 | `PolyForm-Noncommercial-1.0.0` |
 | `cli-sim/` | `shadowbar-sim` 独立命令行沙盒模拟器 | `PolyForm-Noncommercial-1.0.0` |
 | `tests/` | CTest 单元与集成测试（`test_core`、`test_fcitx5_integration`、`test_floating_ui_helpers`） | `PolyForm-Noncommercial-1.0.0` |

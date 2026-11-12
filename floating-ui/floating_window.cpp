@@ -21,6 +21,7 @@
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QHoverEvent>
 #include <QKeyEvent>
 #include <QKeySequenceEdit>
@@ -41,6 +42,7 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QStyleHints>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -144,14 +146,14 @@ QPoint clampWindowPosToScreens(const QPoint &pos, const QSize &win_size) {
                   std::clamp(pos.y(), avail.top(), max_y));
 }
 
-constexpr QSize kDefaultCardSize(476, 324);
-constexpr QSize kDefaultResultOnlySize(440, 210);
-constexpr QSize kDefaultSettingsSize(610, 520);
-constexpr QSize kMinCardSize(360, 225);
-constexpr QSize kMinResultOnlySize(340, 148);
+constexpr QSize kDefaultCardSize(496, 356);
+constexpr QSize kDefaultResultOnlySize(460, 232);
+constexpr QSize kDefaultSettingsSize(630, 540);
+constexpr QSize kMinCardSize(380, 250);
+constexpr QSize kMinResultOnlySize(360, 168);
 constexpr QSize kMinSettingsSize(520, 440);
-constexpr int kDefaultSplitterTop = 108;
-constexpr int kDefaultSplitterBottom = 176;
+constexpr int kDefaultSplitterTop = 114;
+constexpr int kDefaultSplitterBottom = 180;
 
 QPoint centeredWindowPosOnActiveScreen(const QWidget *anchor,
                                        const QSize &win_size) {
@@ -205,7 +207,7 @@ FloatingWindow::FloatingWindow(QWidget *parent)
                     waiting_ty_server_ = false;
                     if (status_label_) {
                         status_label_->setText(
-                            QString("⚠ 本地 TY 模型启动失败: %1").arg(msg));
+                            QString("⚠ 本地混元 HY-MT1.5 启动失败: %1").arg(msg));
                     }
                 }
             });
@@ -244,6 +246,13 @@ FloatingWindow::FloatingWindow(QWidget *parent)
     applyConfigToUi(config_mgr_.config());
     applyTheme();
     applyCurrentPageBounds(true);
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    if (QGuiApplication::styleHints()) {
+        connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged,
+                this, [this](Qt::ColorScheme) { applyTheme(); });
+    }
+#endif
 
     connect(qApp, &QApplication::focusChanged, this,
             [this](QWidget *, QWidget *now) {
@@ -330,10 +339,10 @@ void FloatingWindow::buildUi() {
 QWidget *FloatingWindow::buildCardPage() {
     auto *page = new QWidget(stack_);
     auto *lay = new QVBoxLayout(page);
-    lay->setContentsMargins(10, 8, 10, 8);
-    lay->setSpacing(6);
+    lay->setContentsMargins(12, 10, 12, 10);
+    lay->setSpacing(8);
 
-    // Header bar (mouse-draggable via compositor startSystemMove)
+    // Row 1: Top title & window chrome bar (spacious draggable band)
     header_bar_ = new QWidget(page);
     header_bar_->setObjectName("HeaderBar");
     header_bar_->setMouseTracking(true);
@@ -341,8 +350,8 @@ QWidget *FloatingWindow::buildCardPage() {
     header_bar_->setCursor(Qt::SizeAllCursor);
 
     auto *hdr = new QHBoxLayout(header_bar_);
-    hdr->setContentsMargins(0, 0, 0, 0);
-    hdr->setSpacing(3);
+    hdr->setContentsMargins(2, 0, 0, 0);
+    hdr->setSpacing(6);
 
     auto *brand = new QLabel("✦", header_bar_);
     brand->setObjectName("BrandGlyph");
@@ -351,11 +360,94 @@ QWidget *FloatingWindow::buildCardPage() {
     bf.setBold(true);
     bf.setPointSize(12);
     brand->setFont(bf);
-    hdr->addWidget(brand);
 
-    source_combo_ = new QComboBox(header_bar_);
+    auto *brand_title = new QLabel("ShadowBar", header_bar_);
+    brand_title->setObjectName("BrandTitle");
+    brand_title->installEventFilter(this);
+
+    dir_badge_ = new QLabel("自动 → EN", header_bar_);
+    dir_badge_->setObjectName("DirectionBadge");
+    dir_badge_->installEventFilter(this);
+
+    hdr->addWidget(brand);
+    hdr->addWidget(brand_title);
+    hdr->addWidget(dir_badge_);
+    hdr->addStretch(1);
+
+    read_clip_btn_ = makeIconToolBtn("📋", "读取剪贴板并翻译 (Alt+V)",
+                                     false, header_bar_);
+    read_clip_btn_->setFixedSize(26, 26);
+    connect(read_clip_btn_, &QToolButton::clicked, this,
+            [this]() { readClipboardAndTranslate(true); });
+
+    watch_clip_btn_ = makeIconToolBtn(
+        "⚡",
+        "仅在弹窗打开时自动监听剪贴板变化并翻译（收起即停用监听，自动避让文件/链接，可搭配 ◫ 仅译文模式）",
+        true, header_bar_);
+    watch_clip_btn_->setFixedSize(26, 26);
+    connect(watch_clip_btn_, &QToolButton::toggled, this, [this](bool on) {
+        watch_clipboard_ = on;
+        config_mgr_.mutableConfig().floating_watch_clipboard = on;
+        config_mgr_.save();
+        syncClipboardMonitorState();
+        status_label_->setText(
+            on ? "已开启弹窗剪贴板实时监听（仅弹窗打开时生效，收起即停用 · 自动避让文件/链接）"
+               : "已关闭剪贴板实时监听");
+    });
+
+    result_only_btn_ = makeIconToolBtn(
+        "◫", "仅译文模式：隐藏原文编辑框，配合剪贴板联动更紧凑 (Alt+M)", true,
+        header_bar_);
+    result_only_btn_->setFixedSize(26, 26);
+    connect(result_only_btn_, &QToolButton::toggled, this,
+            [this](bool on) { applyResultOnlyState(on, true, true); });
+
+    auto *hdr_sep = new QFrame(header_bar_);
+    hdr_sep->setObjectName("HeaderSep");
+    hdr_sep->setFixedSize(1, 14);
+    hdr_sep->installEventFilter(this);
+
+    pin_btn_ =
+        makeIconToolBtn("📌", "置顶钉住悬浮窗 (置顶后 Esc 不关闭)", true, header_bar_);
+    pin_btn_->setFixedSize(26, 26);
+    connect(pin_btn_, &QToolButton::toggled, this,
+            [this](bool on) { applyPinnedState(on, true); });
+
+    settings_btn_ =
+        makeIconToolBtn("⚙", "打开 ShadowBar 设置与 API 管理", false, header_bar_);
+    settings_btn_->setFixedSize(26, 26);
+    connect(settings_btn_, &QToolButton::clicked, this,
+            &FloatingWindow::showSettingsPage);
+
+    close_btn_ = makeIconToolBtn("✕", "收起悬浮窗 (Esc)", false, header_bar_);
+    close_btn_->setObjectName("CloseBtn");
+    close_btn_->setFixedSize(26, 26);
+    connect(close_btn_, &QToolButton::clicked, this, &FloatingWindow::hideCard);
+
+    hdr->addWidget(read_clip_btn_);
+    hdr->addWidget(watch_clip_btn_);
+    hdr->addWidget(result_only_btn_);
+    hdr->addWidget(hdr_sep);
+    hdr->addWidget(pin_btn_);
+    hdr->addWidget(settings_btn_);
+    hdr->addWidget(close_btn_);
+    lay->addWidget(header_bar_);
+
+    // Row 2: Dedicated language direction & translation preset strip
+    control_bar_ = new QFrame(page);
+    control_bar_->setObjectName("ControlBar");
+    auto *ctrl = new QHBoxLayout(control_bar_);
+    ctrl->setContentsMargins(8, 5, 8, 5);
+    ctrl->setSpacing(6);
+
+    source_combo_ = new QComboBox(control_bar_);
     source_combo_->setObjectName("HeaderCombo");
+    source_combo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    source_combo_->setMinimumContentsLength(4);
+    source_combo_->setMaximumWidth(114);
+    source_combo_->setCursor(Qt::PointingHandCursor);
     populateSourceLangCombo(source_combo_, true);
+    setupOpaqueComboPopup(source_combo_);
     source_combo_->setToolTip(
         "源语言（选「自动」可智能识别中/英/日/韩/俄/阿等 20 种语言并自动切换译向）");
     connect(source_combo_, &QComboBox::currentIndexChanged, this, [this](int) {
@@ -365,26 +457,41 @@ QWidget *FloatingWindow::buildCardPage() {
             config_mgr_.mutableConfig().floating_source_lang =
                 src.empty() ? std::string("auto") : normalizeLanguageCode(src);
             config_mgr_.save();
+            updateDirectionBadge();
             scheduleTranslation(true);
         }
     });
 
-    swap_btn_ = makeIconToolBtn("⇄", "切换翻译方向 (Alt+S)", false, header_bar_);
+    swap_btn_ = makeIconToolBtn("⇄", "对调源语言与目标语言 (Alt+S)", false, control_bar_);
+    swap_btn_->setObjectName("SwapBtn");
+    swap_btn_->setFixedSize(26, 24);
     connect(swap_btn_, &QToolButton::clicked, this, &FloatingWindow::swapDirection);
 
-    target_combo_ = new QComboBox(header_bar_);
+    target_combo_ = new QComboBox(control_bar_);
     target_combo_->setObjectName("HeaderCombo");
+    target_combo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    target_combo_->setMinimumContentsLength(4);
+    target_combo_->setMaximumWidth(120);
+    target_combo_->setCursor(Qt::PointingHandCursor);
     populateTargetLangCombo(target_combo_, true);
+    setupOpaqueComboPopup(target_combo_);
     target_combo_->setToolTip("目标语言（支持 20 种语言）");
     connect(target_combo_, &QComboBox::currentIndexChanged, this, [this](int) {
         if (!updating_combos_) {
+            updateDirectionBadge();
             scheduleTranslation(true);
         }
     });
 
-    preset_combo_ = new QComboBox(header_bar_);
-    preset_combo_->setObjectName("HeaderCombo");
-    preset_combo_->setToolTip("切换译文风格 / API 预设");
+    preset_combo_ = new QComboBox(control_bar_);
+    preset_combo_->setObjectName("PresetCombo");
+    preset_combo_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    preset_combo_->setMinimumContentsLength(9);
+    preset_combo_->setMaximumWidth(210);
+    preset_combo_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    preset_combo_->setCursor(Qt::PointingHandCursor);
+    setupOpaqueComboPopup(preset_combo_);
+    preset_combo_->setToolTip("切换翻译模型 / API 预设");
     connect(preset_combo_, &QComboBox::currentIndexChanged, this, [this](int) {
         if (!updating_combos_) {
             const std::string chosen =
@@ -406,67 +513,24 @@ QWidget *FloatingWindow::buildCardPage() {
                     updating_combos_ = false;
                 }
                 notifyFcitxReload();
+                updateDirectionBadge();
+                maybePrewarmLocalTyServer();
             }
             scheduleTranslation(true);
         }
     });
 
-    hdr->addWidget(source_combo_);
-    hdr->addWidget(swap_btn_);
-    hdr->addWidget(target_combo_);
-    hdr->addWidget(preset_combo_);
-    hdr->addStretch(1);
-
-    read_clip_btn_ = makeIconToolBtn("📋", "读取剪贴板并翻译 (Alt+V)",
-                                     false, header_bar_);
-    connect(read_clip_btn_, &QToolButton::clicked, this,
-            [this]() { readClipboardAndTranslate(true); });
-
-    watch_clip_btn_ = makeIconToolBtn(
-        "⚡",
-        "自动监听剪贴板变化并翻译（支持后台免点击监听，自动避让文件/链接，可搭配 ◫ 仅译文模式）",
-        true, header_bar_);
-    connect(watch_clip_btn_, &QToolButton::toggled, this, [this](bool on) {
-        watch_clipboard_ = on;
-        config_mgr_.mutableConfig().floating_watch_clipboard = on;
-        config_mgr_.save();
-        syncClipboardMonitorState();
-        status_label_->setText(
-            on ? "已开启剪贴板实时监听（无需点击窗口 · 自动避让文件/链接，Alt+M 可切仅译文）"
-               : "已关闭剪贴板实时监听");
-    });
-
-    result_only_btn_ = makeIconToolBtn(
-        "◫", "仅译文模式：隐藏原文编辑框，配合剪贴板联动更紧凑 (Alt+M)", true,
-        header_bar_);
-    connect(result_only_btn_, &QToolButton::toggled, this,
-            [this](bool on) { applyResultOnlyState(on, true, true); });
-
-    pin_btn_ =
-        makeIconToolBtn("📌", "置顶钉住悬浮窗 (置顶后 Esc 不关闭)", true, header_bar_);
-    connect(pin_btn_, &QToolButton::toggled, this,
-            [this](bool on) { applyPinnedState(on, true); });
-
-    settings_btn_ =
-        makeIconToolBtn("⚙", "打开 ShadowBar 设置与 API 管理", false, header_bar_);
-    connect(settings_btn_, &QToolButton::clicked, this,
-            &FloatingWindow::showSettingsPage);
-
-    close_btn_ = makeIconToolBtn("✕", "收起悬浮窗 (Esc)", false, header_bar_);
-    connect(close_btn_, &QToolButton::clicked, this, &FloatingWindow::hideCard);
-
-    hdr->addWidget(read_clip_btn_);
-    hdr->addWidget(watch_clip_btn_);
-    hdr->addWidget(result_only_btn_);
-    hdr->addWidget(pin_btn_);
-    hdr->addWidget(settings_btn_);
-    hdr->addWidget(close_btn_);
-    lay->addWidget(header_bar_);
+    ctrl->addWidget(source_combo_);
+    ctrl->addWidget(swap_btn_);
+    ctrl->addWidget(target_combo_);
+    ctrl->addSpacing(4);
+    ctrl->addWidget(preset_combo_, 1);
+    lay->addWidget(control_bar_);
 
     // Stretchable splitter separating source editor and result pane
     splitter_ = new QSplitter(Qt::Vertical, page);
     splitter_->setObjectName("CardSplitter");
-    splitter_->setHandleWidth(6);
+    splitter_->setHandleWidth(8);
     splitter_->setChildrenCollapsible(false);
     connect(splitter_, &QSplitter::splitterMoved, this, [this](int, int) {
         captureSplitterSizes();
@@ -477,7 +541,7 @@ QWidget *FloatingWindow::buildCardPage() {
     source_edit_ = new QPlainTextEdit(splitter_);
     source_edit_->setObjectName("CardEditor");
     source_edit_->setPlaceholderText(
-        "输入文本进行翻译或反向翻译，或按 Alt+V 读取剪贴板…  (Ctrl+Enter 复制并收起 · Ctrl+滚轮缩放)");
+        "输入文本进行翻译或反向核对，或按 Alt+V 读取剪贴板…  (Ctrl+Enter 复制并收起 · Ctrl+滚轮缩放)");
     source_edit_->setMinimumHeight(54);
     source_edit_->installEventFilter(this);
     source_edit_->viewport()->installEventFilter(this);
@@ -494,20 +558,18 @@ QWidget *FloatingWindow::buildCardPage() {
     bottom_lay->setContentsMargins(0, 2, 0, 0);
     bottom_lay->setSpacing(6);
 
-    // Mid meta bar
+    // Compact result toolbar (stats + inline actions)
     auto *mid_row = new QHBoxLayout();
     mid_row->setContentsMargins(2, 0, 2, 0);
-    mid_row->setSpacing(5);
-    dir_badge_ = new QLabel("自动 → EN", bottom_pane);
-    dir_badge_->setObjectName("DirectionBadge");
+    mid_row->setSpacing(6);
     segment_badge_ = new QLabel(bottom_pane);
     segment_badge_->setObjectName("SegmentBadge");
     segment_badge_->hide();
 
     char_count_label_ = new QLabel("0 字", bottom_pane);
-    char_count_label_->setObjectName("SubtleStatus");
+    char_count_label_->setObjectName("CountPill");
     clear_btn_ = makeIconToolBtn("⌫", "清空输入内容", false, bottom_pane);
-    clear_btn_->setFixedSize(22, 22);
+    clear_btn_->setFixedSize(24, 24);
     connect(clear_btn_, &QToolButton::clicked, this, &FloatingWindow::clearDraft);
 
     next_seg_btn_ = new QPushButton("⇣ 译下段", bottom_pane);
@@ -530,10 +592,9 @@ QWidget *FloatingWindow::buildCardPage() {
     connect(retranslate_btn_, &QPushButton::clicked, this,
             &FloatingWindow::retranslateNow);
 
-    mid_row->addWidget(dir_badge_);
     mid_row->addWidget(segment_badge_);
-    mid_row->addStretch(1);
     mid_row->addWidget(char_count_label_);
+    mid_row->addStretch(1);
     mid_row->addWidget(clear_btn_);
     mid_row->addWidget(next_seg_btn_);
     mid_row->addWidget(retranslate_btn_);
@@ -575,6 +636,7 @@ QWidget *FloatingWindow::buildCardPage() {
     reverse_btn_->setObjectName("SecondaryButton");
     reverse_btn_->setToolTip(
         "将下方译文放回原文框并反向翻译回原语种，用来核对语义 (Alt+R)");
+    reverse_btn_->setCursor(Qt::PointingHandCursor);
     reverse_btn_->setEnabled(false);
     connect(reverse_btn_, &QPushButton::clicked, this,
             &FloatingWindow::reverseTranslateResult);
@@ -582,6 +644,7 @@ QWidget *FloatingWindow::buildCardPage() {
     copy_btn_ = new QPushButton("📋 复制", page);
     copy_btn_->setObjectName("SecondaryButton");
     copy_btn_->setToolTip("复制译文到剪贴板 (Ctrl+Shift+C)");
+    copy_btn_->setCursor(Qt::PointingHandCursor);
     copy_btn_->setEnabled(false);
     connect(copy_btn_, &QPushButton::clicked, this,
             [this]() { copyTranslation(false); });
@@ -589,13 +652,14 @@ QWidget *FloatingWindow::buildCardPage() {
     copy_close_btn_ = new QPushButton("✓ 复制并收起", page);
     copy_close_btn_->setObjectName("PrimaryButton");
     copy_close_btn_->setToolTip("复制译文并隐藏悬浮窗 (Ctrl+Enter)");
+    copy_close_btn_->setCursor(Qt::PointingHandCursor);
     copy_close_btn_->setEnabled(false);
     connect(copy_close_btn_, &QPushButton::clicked, this,
             [this]() { copyTranslation(true); });
 
     reset_win_btn_ = makeIconToolBtn(
         "↺", "重置窗口位置与默认大小（回到屏幕居中，避免窗口跑偏）", false, page);
-    reset_win_btn_->setFixedSize(22, 22);
+    reset_win_btn_->setFixedSize(24, 24);
     connect(reset_win_btn_, &QToolButton::clicked, this,
             [this]() { resetWindowGeometry(false); });
 
@@ -621,84 +685,139 @@ void FloatingWindow::applyTheme() {
         "#CardRoot {"
         "  background-color: %1;"
         "  border: 1px solid %2;"
-        "  border-radius: 12px;"
+        "  border-radius: 14px;"
+        "}"
+        "#ControlBar {"
+        "  background-color: %14;"
+        "  border: 1px solid %2;"
+        "  border-radius: 10px;"
+        "}"
+        "QFrame#HeaderSep {"
+        "  background-color: %2;"
+        "  border: none;"
         "}"
         "QLabel { color: %3; background: transparent; }"
         "QLabel#BrandGlyph { color: %4; }"
+        "QLabel#BrandTitle {"
+        "  color: %3;"
+        "  font-size: 12.5px;"
+        "  font-weight: 700;"
+        "  letter-spacing: 0.2px;"
+        "}"
         "QLabel#SubtleStatus { color: %5; font-size: %13px; }"
         "QLabel#DirectionBadge {"
         "  background: %6;"
         "  color: %4;"
+        "  border: 1px solid %2;"
         "  border-radius: 6px;"
-        "  padding: 2px 7px;"
+        "  padding: 2px 8px;"
         "  font-size: 11px;"
         "  font-weight: 600;"
         "}"
-        "QLabel#SegmentBadge {"
+        "QLabel#SegmentBadge, QLabel#CountPill {"
         "  background: %7;"
         "  color: %5;"
         "  border: 1px solid %2;"
         "  border-radius: 6px;"
-        "  padding: 1px 6px;"
+        "  padding: 1px 7px;"
         "  font-size: 11px;"
         "}"
         "QSplitter#CardSplitter::handle:vertical {"
         "  background: %2;"
         "  height: 2px;"
-        "  margin: 2px 36px;"
+        "  margin: 3px 44px;"
         "  border-radius: 1px;"
         "}"
         "QSplitter#CardSplitter::handle:vertical:hover {"
         "  background: %4;"
         "  height: 3px;"
         "}"
-        "QComboBox#HeaderCombo {"
-        "  background: %7;"
+        "QComboBox#HeaderCombo, QComboBox#PresetCombo {"
+        "  background: %15;"
         "  color: %3;"
         "  border: 1px solid %2;"
-        "  border-radius: 6px;"
-        "  padding: 2px 5px;"
+        "  border-radius: 7px;"
+        "  padding: 3px 22px 3px 9px;"
+        "  min-height: 22px;"
         "  font-size: 11.5px;"
         "}"
-        "QToolButton#HeaderToolBtn {"
+        "QComboBox#HeaderCombo:hover, QComboBox#PresetCombo:hover {"
+        "  border: 1px solid %4;"
+        "}"
+        "QComboBox#HeaderCombo::drop-down, QComboBox#PresetCombo::drop-down {"
+        "  subcontrol-origin: padding;"
+        "  subcontrol-position: center right;"
+        "  width: 18px;"
+        "  border: none;"
+        "}"
+        "QToolButton#HeaderToolBtn, QToolButton#SwapBtn, QToolButton#CloseBtn {"
         "  background: transparent;"
         "  color: %3;"
         "  border: 1px solid transparent;"
-        "  border-radius: 6px;"
+        "  border-radius: 7px;"
         "  font-size: 12.5px;"
         "}"
-        "QToolButton#HeaderToolBtn:hover { background: %8; }"
+        "QToolButton#HeaderToolBtn:hover, QToolButton#SwapBtn:hover { background: %8; }"
+        "QToolButton#SwapBtn {"
+        "  background: %7;"
+        "  border: 1px solid %2;"
+        "}"
         "QToolButton#HeaderToolBtn:checked {"
         "  background: %6;"
         "  border: 1px solid %4;"
+        "  color: %4;"
         "}"
-        "QPlainTextEdit#CardEditor, QPlainTextEdit#CardResult {"
+        "QToolButton#CloseBtn:hover {"
+        "  background: rgba(239,68,68,0.88);"
+        "  color: #ffffff;"
+        "}"
+        "QPlainTextEdit#CardEditor {"
         "  background: %9;"
         "  color: %3;"
         "  border: 1px solid %2;"
-        "  border-radius: 8px;"
-        "  padding: 6px 8px;"
+        "  border-radius: 10px;"
+        "  padding: 7px 9px;"
         "  font-size: %12px;"
         "}"
         "QPlainTextEdit#CardEditor:focus {"
-        "  border: 1px solid %4;"
+        "  border: 1.5px solid %4;"
         "}"
+        "QPlainTextEdit#CardResult {"
+        "  background: %15;"
+        "  color: %3;"
+        "  border: 1px solid %2;"
+        "  border-radius: 10px;"
+        "  padding: 7px 9px;"
+        "  font-size: %12px;"
+        "}"
+        "QScrollBar:vertical {"
+        "  background: transparent;"
+        "  width: 7px;"
+        "  margin: 4px 1px;"
+        "}"
+        "QScrollBar::handle:vertical {"
+        "  background: %2;"
+        "  border-radius: 3px;"
+        "  min-height: 20px;"
+        "}"
+        "QScrollBar::handle:vertical:hover { background: %5; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
         "QPushButton#SecondaryButton {"
         "  background: %7;"
         "  color: %3;"
         "  border: 1px solid %2;"
-        "  border-radius: 7px;"
-        "  padding: 5px 10px;"
+        "  border-radius: 8px;"
+        "  padding: 5px 11px;"
         "  font-size: 12px;"
         "}"
-        "QPushButton#SecondaryButton:hover:!disabled { background: %8; }"
+        "QPushButton#SecondaryButton:hover:!disabled { background: %8; border: 1px solid %4; }"
         "QPushButton#SecondaryButton:disabled { color: %5; }"
         "QPushButton#RetryButton, QPushButton#CompactButton {"
         "  background: %7;"
         "  color: %3;"
         "  border: 1px solid %2;"
-        "  border-radius: 6px;"
-        "  padding: 2px 8px;"
+        "  border-radius: 7px;"
+        "  padding: 3px 9px;"
         "  font-size: 11.5px;"
         "}"
         "QPushButton#RetryButton:hover:!disabled, QPushButton#CompactButton:hover:!disabled { background: %8; }"
@@ -716,21 +835,35 @@ void FloatingWindow::applyTheme() {
         "  background: %4;"
         "  color: %10;"
         "  border: none;"
-        "  border-radius: 7px;"
-        "  padding: 5px 12px;"
+        "  border-radius: 8px;"
+        "  padding: 5px 13px;"
         "  font-size: 12px;"
         "  font-weight: 600;"
         "}"
         "QPushButton#PrimaryButton:hover:!disabled { background: %11; }"
-        "QPushButton#PrimaryButton:disabled { background: %7; color: %5; }")
+        "QPushButton#PrimaryButton:disabled { background: %7; color: %5; }"
+        "QToolTip {"
+        "  background-color: %16;"
+        "  color: %3;"
+        "  border: 1px solid %17;"
+        "  border-radius: 6px;"
+        "  padding: 4px 8px;"
+        "}")
                       .arg(cssRgba(t.surface), cssRgba(t.border),
                            t.text_primary.name(), t.accent.name(),
                            t.text_secondary.name(), cssRgba(t.accent_soft),
                            cssRgba(t.pill_bg), cssRgba(t.hover_bg),
                            cssRgba(t.surface_input), t.accent_text.name(),
-                           t.accent.lighter(112).name(),
+                           t.accent_hover.name(),
                            QString::number(editor_px),
-                           QString::number(meta_px)));
+                           QString::number(meta_px),
+                           cssRgba(t.card_strip),
+                           cssRgba(t.surface_elevated),
+                           t.popup_bg.name(),
+                           t.popup_border.name()));
+    applyOpaqueComboTheme(source_combo_, t);
+    applyOpaqueComboTheme(target_combo_, t);
+    applyOpaqueComboTheme(preset_combo_, t);
     if (settings_view_) {
         settings_view_->applyTheme();
     }
@@ -786,18 +919,10 @@ void FloatingWindow::applyConfigToUi(const ShadowConfig &cfg) {
     settings_view_->setConfig(cfg);
     translator_->setCacheCapacity(cfg.cache_size);
     translator_->reloadOfflineDictionaries(cfg.effectiveOfflineDicts());
-    if (cfg.hymt_auto_start && ty_mgr_) {
-        if (const Preset *active = cfg.findPreset(cfg.active_preset)) {
-            const QString ty_v = inferTyVariantForPreset(*active, cfg.hymt_port);
-            if (!ty_v.isEmpty()) {
-                const QString bin = resolvedTyServerBinary(cfg);
-                const QString mdl = resolvedTyModelPath(cfg, ty_v);
-                if (QFileInfo::exists(bin) && QFileInfo::exists(mdl)) {
-                    ty_mgr_->startServer(bin, ty_v, mdl, cfg.hymt_port,
-                                         cfg.hymt_threads,
-                                         QString::fromStdString(cfg.hymt_backend));
-                }
-            }
+    if (ty_mgr_) {
+        ty_mgr_->setIdleUnloadSeconds(cfg.hymt_idle_unload_sec);
+        if (isPopupActiveOnScreen()) {
+            maybePrewarmLocalTyServer();
         }
     }
     syncOrbVisibility();
@@ -880,6 +1005,8 @@ void FloatingWindow::handleInitialAction(const QString &action) {
         ShowSettings();
     } else if (action == "--sync-orb") {
         SyncOrb();
+    } else if (action == "--wake-ty") {
+        WakeTy();
     } else if (action == "--reset") {
         ResetWindow();
     } else if (action == "--show") {
@@ -932,6 +1059,59 @@ void FloatingWindow::SyncOrb() {
     }
 }
 
+namespace {
+
+bool ensureTyServerWarm(const ShadowConfig &cfg, TyModelManager *ty_mgr,
+                        const QString &ty_v) {
+    if (!ty_mgr || ty_v.isEmpty()) {
+        return false;
+    }
+    const QString bin = resolvedTyServerBinary(cfg);
+    const QString mdl = resolvedTyModelPath(cfg, ty_v);
+    if (!QFileInfo::exists(bin) || !QFileInfo::exists(mdl)) {
+        return false;
+    }
+    if (ty_mgr->isReadyFor(ty_v, mdl, cfg.hymt_port,
+                           QString::fromStdString(cfg.hymt_backend))) {
+        ty_mgr->markActivity();
+        return true;
+    }
+    return ty_mgr->startServer(bin, ty_v, mdl, cfg.hymt_port, cfg.hymt_threads,
+                               QString::fromStdString(cfg.hymt_backend));
+}
+
+} // namespace
+
+void FloatingWindow::WakeTy() {
+    config_mgr_.reloadIfModified();
+    applyConfigToUi(config_mgr_.config());
+    const auto &cfg = config_mgr_.config();
+    if (ty_mgr_ && cfg.hymt_auto_start) {
+        const Preset *target_preset = cfg.findPreset(cfg.active_preset);
+        QString ty_v =
+            target_preset ? inferTyVariantForPreset(*target_preset, cfg.hymt_port)
+                          : QString();
+        if (ty_v.isEmpty()) {
+            for (const auto &p : cfg.presets) {
+                ty_v = inferTyVariantForPreset(p, cfg.hymt_port);
+                if (!ty_v.isEmpty()) {
+                    break;
+                }
+            }
+        }
+        ensureTyServerWarm(cfg, ty_mgr_.get(), ty_v);
+    }
+    const bool ty_active =
+        ty_mgr_ &&
+        (ty_mgr_->state() == TyModelManager::ServerState::Starting ||
+         ty_mgr_->state() == TyModelManager::ServerState::Running ||
+         ty_mgr_->state() == TyModelManager::ServerState::ExternalRunning);
+    if (!ty_active && !isVisible() &&
+        !(cfg.floating_enabled && cfg.floating_show_orb)) {
+        qApp->quit();
+    }
+}
+
 void FloatingWindow::ResetWindow() {
     resetWindowGeometry(true);
 }
@@ -946,6 +1126,8 @@ void FloatingWindow::QuitApp() {
     const QList<QWidget *> visible = visibleSnapshotWidgets();
     if (isWaylandPlatform() && !visible.isEmpty()) {
         quitting_with_snapshot_ = true;
+        cancelPopupTranslation();
+        syncClipboardMonitorState();
         const uint64_t snap_gen = ++wayland_snapshot_gen_;
         waiting_quit_gen_ = snap_gen;
         pending_quit_captions_.clear();
@@ -970,6 +1152,10 @@ void FloatingWindow::QuitApp() {
     }
 
     saveUiStateNow();
+    cancelPopupTranslation();
+    if (clip_monitor_) {
+        clip_monitor_->setWatchEnabled(false);
+    }
     if (orb_) {
         orb_->hide();
     }
@@ -1036,6 +1222,7 @@ void FloatingWindow::showCard(bool force_read_clipboard) {
         source_edit_->setFocus(Qt::ShortcutFocusReason);
     }
     syncClipboardMonitorState();
+    maybePrewarmLocalTyServer();
 
     const bool auto_read = config_mgr_.config().floating_auto_read_clipboard;
     if (force_read_clipboard || auto_read) {
@@ -1071,9 +1258,11 @@ void FloatingWindow::hideCard() {
     }
     captureLiveWidgetGeometry();
     captureSplitterSizes();
+    cancelPopupTranslation();
 
     if (isWaylandPlatform() && !hiding_with_snapshot_) {
         hiding_with_snapshot_ = true;
+        syncClipboardMonitorState();
         const uint64_t snap_gen = ++wayland_snapshot_gen_;
         waiting_card_geom_gen_ = snap_gen;
         QTimer::singleShot(65, this, [this, snap_gen]() {
@@ -1098,14 +1287,77 @@ void FloatingWindow::hideCard() {
     syncClipboardMonitorState();
 }
 
+bool FloatingWindow::isPopupActiveOnScreen() const {
+    return isVisible() && !isMinimized() && !hiding_with_snapshot_ &&
+           !quitting_with_snapshot_ && stack_ &&
+           stack_->currentWidget() == card_page_;
+}
+
+void FloatingWindow::cancelPopupTranslation() {
+    ++active_revision_;
+    waiting_ty_server_ = false;
+    active_segment_idx_ = -1;
+    segment_queue_.clear();
+    setPopupTyBusy(false);
+    if (translator_) {
+        translator_->cancelAll();
+    }
+    bool cleared_loading = false;
+    for (auto &seg : segments_) {
+        if (seg.loading) {
+            seg.loading = false;
+            cleared_loading = true;
+        }
+    }
+    if (cleared_loading) {
+        renderSegmentedResult();
+    }
+}
+
+void FloatingWindow::setPopupTyBusy(bool busy) {
+    if (ty_translation_busy_ == busy) {
+        return;
+    }
+    ty_translation_busy_ = busy;
+    if (!ty_mgr_) {
+        return;
+    }
+    if (busy) {
+        ty_mgr_->beginTranslationActivity();
+    } else {
+        ty_mgr_->endTranslationActivity();
+    }
+}
+
+void FloatingWindow::maybePrewarmLocalTyServer() {
+    if (!ty_mgr_) {
+        return;
+    }
+    const auto &cfg = config_mgr_.config();
+    if (!cfg.hymt_auto_start) {
+        return;
+    }
+    const Preset *active = nullptr;
+    if (preset_combo_ && preset_combo_->count() > 0) {
+        const std::string cur_id =
+            preset_combo_->currentData().toString().toStdString();
+        active = cfg.findPreset(cur_id);
+    }
+    if (!active) {
+        active = cfg.findPreset(cfg.active_preset);
+    }
+    if (!active) {
+        return;
+    }
+    ensureTyServerWarm(cfg, ty_mgr_.get(),
+                       inferTyVariantForPreset(*active, cfg.hymt_port));
+}
+
 void FloatingWindow::syncClipboardMonitorState() {
     if (!clip_monitor_) {
         return;
     }
-    const bool should_watch =
-        isVisible() && watch_clipboard_ && stack_ &&
-        stack_->currentWidget() == card_page_;
-    clip_monitor_->setWatchEnabled(should_watch);
+    clip_monitor_->setWatchEnabled(watch_clipboard_ && isPopupActiveOnScreen());
 }
 
 void FloatingWindow::readClipboardAndTranslate(bool force) {
@@ -1186,9 +1438,11 @@ void FloatingWindow::scheduleTranslation(bool immediate) {
     const QString raw = source_edit_->toPlainText().trimmed();
     if (raw.isEmpty()) {
         ++active_revision_;
+        waiting_ty_server_ = false;
         translator_->cancelAll();
         active_segment_idx_ = -1;
         segment_queue_.clear();
+        setPopupTyBusy(false);
         segments_.clear();
         last_split_context_key_.clear();
         current_translation_.clear();
@@ -1304,9 +1558,11 @@ void FloatingWindow::dispatchTranslation(bool immediate, bool bypass_cache) {
     }
 
     ++active_revision_;
+    waiting_ty_server_ = false;
     translator_->cancelAll();
     active_segment_idx_ = -1;
     segment_queue_.clear();
+    setPopupTyBusy(false);
     segments_ = std::move(next_segments);
     queue_bypass_cache_ = bypass_cache;
 
@@ -1346,13 +1602,18 @@ void FloatingWindow::dispatchTranslation(bool immediate, bool bypass_cache) {
 }
 
 void FloatingWindow::pumpNextSegmentTranslation(bool immediate) {
-    if (active_segment_idx_ >= 0 || segment_queue_.empty()) {
+    if (active_segment_idx_ >= 0) {
+        return;
+    }
+    if (segment_queue_.empty()) {
+        setPopupTyBusy(false);
         return;
     }
 
     const size_t seg_idx = segment_queue_.front();
     segment_queue_.pop_front();
     if (seg_idx >= segments_.size()) {
+        setPopupTyBusy(false);
         return;
     }
 
@@ -1380,6 +1641,7 @@ void FloatingWindow::pumpNextSegmentTranslation(bool immediate) {
             if (!ty_mgr_->startServer(bin, ty_variant, mdl, cfg.hymt_port,
                                       cfg.hymt_threads,
                                       QString::fromStdString(cfg.hymt_backend))) {
+                setPopupTyBusy(false);
                 segments_[seg_idx].loading = false;
                 segments_[seg_idx].failed = true;
                 segments_[seg_idx].error = ty_mgr_->statusMessage();
@@ -1393,16 +1655,23 @@ void FloatingWindow::pumpNextSegmentTranslation(bool immediate) {
                 return;
             }
             if (ty_mgr_->state() == TyModelManager::ServerState::Starting) {
+                setPopupTyBusy(false);
+                ty_mgr_->markActivity();
                 waiting_ty_server_ = true;
                 segment_queue_.push_front(seg_idx);
                 if (status_label_) {
                     status_label_->setText(
-                        QString("⏳ 正在加载本地 TY %1 模型（约 0.7s）…")
+                        QString("⏳ 正在加载本地混元 HY-MT1.5 (%1)…")
                             .arg(ty_variant));
                 }
                 return;
             }
         }
+    }
+
+    setPopupTyBusy(!ty_variant.isEmpty());
+    if (!ty_variant.isEmpty() && ty_mgr_) {
+        ty_mgr_->markActivity();
     }
 
     segments_[seg_idx].loading = true;
@@ -1492,6 +1761,8 @@ void FloatingWindow::pumpNextSegmentTranslation(bool immediate) {
                     self->renderSegmentedResult();
                     if (!self->segment_queue_.empty()) {
                         self->pumpNextSegmentTranslation(true);
+                    } else {
+                        self->setPopupTyBusy(false);
                     }
                 },
                 Qt::QueuedConnection);
@@ -1696,6 +1967,9 @@ void FloatingWindow::swapDirection() {
     selectComboByData(source_combo_, QString::fromStdString(eff_tgt));
     selectComboByData(target_combo_, QString::fromStdString(eff_src));
     updating_combos_ = false;
+    config_mgr_.mutableConfig().floating_source_lang = normalizeLanguageCode(eff_tgt);
+    config_mgr_.save();
+    updateDirectionBadge();
     scheduleTranslation(true);
 }
 
@@ -1725,6 +1999,7 @@ void FloatingWindow::reverseTranslateResult() {
     selectComboByData(source_combo_, "auto");
     selectComboByData(target_combo_, QString::fromStdString(back_target));
     updating_combos_ = false;
+    updateDirectionBadge();
 
     last_auto_loaded_clip_ = reversed_input;
     source_edit_->blockSignals(true);
@@ -2198,6 +2473,7 @@ void FloatingWindow::finishPendingHide(uint64_t snapshot_gen) {
         return;
     }
     hiding_with_snapshot_ = false;
+    cancelPopupTranslation();
     captureLiveWidgetGeometry();
     captureSplitterSizes();
     saveUiStateNow();
@@ -2211,6 +2487,7 @@ void FloatingWindow::finishPendingQuit(uint64_t snapshot_gen) {
     }
     quitting_with_snapshot_ = false;
     pending_quit_captions_.clear();
+    cancelPopupTranslation();
     if (clip_monitor_) {
         clip_monitor_->setWatchEnabled(false);
     }
@@ -2319,7 +2596,7 @@ bool FloatingWindow::eventFilter(QObject *watched, QEvent *event) {
             auto *me = static_cast<QMouseEvent *>(event);
             if (me->button() == Qt::LeftButton &&
                 (watched == header_bar_ ||
-                 qobject_cast<QLabel *>(watched) != nullptr)) {
+                 qobject_cast<QFrame *>(watched) != nullptr)) {
                 if (QWindow *win = windowHandle()) {
                     win->startSystemMove();
                 }
@@ -2393,8 +2670,11 @@ bool FloatingWindow::eventFilter(QObject *watched, QEvent *event) {
 
 void FloatingWindow::changeEvent(QEvent *event) {
     if (event->type() == QEvent::ApplicationPaletteChange ||
-        event->type() == QEvent::PaletteChange) {
+        event->type() == QEvent::PaletteChange ||
+        event->type() == QEvent::ThemeChange) {
         applyTheme();
+    } else if (event->type() == QEvent::WindowStateChange) {
+        syncClipboardMonitorState();
     }
     QWidget::changeEvent(event);
 }
@@ -2415,7 +2695,14 @@ void FloatingWindow::showEvent(QShowEvent *event) {
     }
 }
 
+void FloatingWindow::hideEvent(QHideEvent *event) {
+    QWidget::hideEvent(event);
+    cancelPopupTranslation();
+    syncClipboardMonitorState();
+}
+
 void FloatingWindow::closeEvent(QCloseEvent *event) {
+    cancelPopupTranslation();
     if (clip_monitor_) {
         clip_monitor_->setWatchEnabled(false);
     }

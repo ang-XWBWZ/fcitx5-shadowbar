@@ -2,6 +2,7 @@
 
 #include "shadowbar/types.hpp"
 
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 
@@ -58,6 +59,21 @@ QString tyChatCompletionsEndpoint(int port);
 
 /// Builds loopback `/health` URL.
 QString tyHealthEndpoint(int port);
+
+/// Builds loopback `/slots` URL.
+QString tySlotsEndpoint(int port);
+
+/// Returns true when a managed local server has exceeded the idle unload threshold with no active requests.
+bool shouldUnloadIdleTyModel(bool managed_running,
+                             int idle_unload_sec,
+                             qint64 elapsed_idle_ms,
+                             int active_requests);
+
+/// Parses `llama-server` `/slots` JSON array and returns true if any slot is currently processing.
+bool parseLlamaSlotsBusy(const QByteArray &slots_json);
+
+/// Returns milliseconds since the last cross-process local HY-MT inference stamp update, or -1 if none.
+qint64 readExternalHyMtActivityAgeMs();
 
 /// Builds a ShadowBar Preset wired to local `llama-server` for the given variant.
 Preset makeTyPreset(const QString &variant,

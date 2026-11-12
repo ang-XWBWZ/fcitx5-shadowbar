@@ -2,6 +2,21 @@
 
 All notable changes to **fcitx5-shadowbar** are documented in this file.
 
+## [0.1.1] - 2026-11-12
+
+### Popup Performance, Modernized Card Layout & System Theme Polish
+
+- **Performance & Local Model Lifecycle**
+  - Clipboard subscriptions (`wl-paste --watch`, KDE Klipper D-Bus, `QClipboard`) now activate **only while the translation popup card is open**, eliminating background idle overhead while preserving instant clipboard updates.
+  - Added configurable idle auto-unload (`idle_unload_sec`, default 5 minutes) for local **混元 HY-MT1.5** (`llama-server`), plus `--wake-ty` on-demand wake and single-slot KV sizing (`-np 1`) to free RAM/VRAM when unused.
+  - Optimized async HTTP/SSE streaming and lazy idle-exiting worker lifecycle in `AsyncTranslationEngine`.
+
+- **UI Layout, Naming & Theme Fixes**
+  - Separated top draggable title chrome (`✦ ShadowBar`, direction badge, clipboard/view/window actions) from a dedicated language direction & preset control strip (`control_bar_`) for clearer visual hierarchy.
+  - Unified user-facing naming to **腾讯混元 HY-MT1.5** (`混元 HY-MT1.5 (1.25bit)` / `(2bit)` / `(自定义)`) across popup presets, settings tabs, status messages, and documentation while keeping existing config IDs backward-compatible.
+  - Enhanced `ThemeTokens` and event/palette listeners (`QEvent::ThemeChange`, `colorSchemeChanged` on Qt 6.5+) to follow desktop light/dark mode and system accent colors cleanly.
+  - Enforced 100%-opaque popup styling (`popup_bg`, `QPalette`, `OpaquePopupEventFilter`) for all `QComboBox` language/preset dropdowns and context menus over translucent windows.
+
 ## [0.1.0] - 2026-11-12
 
 ### Initial Public Non-Commercial Open-Source Release

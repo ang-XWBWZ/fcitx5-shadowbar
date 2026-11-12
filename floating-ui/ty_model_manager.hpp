@@ -2,6 +2,7 @@
 
 #include "ty_model_helpers.hpp"
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QProcess>
 #include <QString>
@@ -9,7 +10,9 @@
 #include <QTimer>
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <thread>
 
 namespace shadowbar::floating_ui {
@@ -60,6 +63,18 @@ public:
     /// Triggers one asynchronous `/health` probe on `port`.
     void probeHealthOnce(int port);
 
+    /// Configures idle auto-unload timeout in seconds (`0` disables auto-unload).
+    void setIdleUnloadSeconds(int seconds);
+    int idleUnloadSeconds() const { return idle_unload_sec_; }
+
+    /// Marks model usage activity so the idle-unload timer resets.
+    void markActivity();
+
+    /// Tracks active in-flight translations so idle-unload never stops mid-generation.
+    void beginTranslationActivity();
+    void endTranslationActivity();
+    int activeRequests() const { return active_requests_; }
+
     /// Downloads official HY-MT1.5 GGUF variant using `curl` into `dest_path`.
     bool startDownload(const QString &variant,
                        const QString &mirror,
@@ -79,6 +94,11 @@ signals:
     void downloadFinished(const QString &variant, bool ok, const QString &message);
 
 private:
+    enum class ProbeKind {
+        Health,
+        Slots,
+    };
+
     void setState(ServerState next, const QString &msg);
     void appendLog(const QString &line);
     void spawnServerProcess(int gpu_layers);
@@ -86,13 +106,22 @@ private:
     void stopServerProcessOnly();
     void pollStartupHealth();
     void handleHealthProbeResult(uint64_t generation, int port, bool healthy);
+    void handleSlotsProbeResult(uint64_t generation, int port, bool busy);
+    void enqueueProbe(ProbeKind kind, uint64_t generation, int port);
+    void probeWorkerLoop();
     void joinProbeThread();
-    void launchHealthProbeAsync(uint64_t generation, int port);
+    void scheduleIdleUnloadTimer(qint64 delay_ms = -1);
+    void onIdleTimerFired();
+    void unloadForIdle();
 
     QProcess *server_proc_ = nullptr;
     QByteArray server_stdout_buf_;
     QTimer *health_timer_ = nullptr;
     QTimer *startup_timeout_timer_ = nullptr;
+    QTimer *idle_timer_ = nullptr;
+    QElapsedTimer last_activity_timer_;
+    int idle_unload_sec_ = 300;
+    int active_requests_ = 0;
 
     ServerState state_ = ServerState::Stopped;
     QString active_variant_;
@@ -113,7 +142,14 @@ private:
     uint64_t probe_generation_ = 0;
 
     std::atomic<bool> shutting_down_{false};
-    std::atomic<bool> probe_in_flight_{false};
+    std::mutex probe_mu_;
+    std::condition_variable probe_cv_;
+    bool probe_stop_ = false;
+    bool probe_worker_running_ = false;
+    bool has_pending_probe_ = false;
+    ProbeKind pending_probe_kind_ = ProbeKind::Health;
+    uint64_t pending_probe_gen_ = 0;
+    int pending_probe_port_ = 18081;
     std::thread probe_thread_;
 
     QProcess *download_proc_ = nullptr;

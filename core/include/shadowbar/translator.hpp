@@ -80,7 +80,8 @@ public:
     using UpdateCallback = std::function<void(uint64_t revision, TranslationResult result)>;
 
     explicit AsyncTranslationEngine(HttpTransport transport = curlHttpTransport,
-                                    size_t cache_capacity = 2000);
+                                    size_t cache_capacity = 2000,
+                                    int worker_idle_timeout_ms = 45000);
     ~AsyncTranslationEngine();
 
     AsyncTranslationEngine(const AsyncTranslationEngine &) = delete;
@@ -93,14 +94,17 @@ public:
     OfflineDictStats offlineDictStats() const;
 
     /// Submits a translation job. Calls `on_update` synchronously if resolved immediately from cache/dict,
-    /// or asynchronously from the worker thread after debounce.
+    /// or asynchronously from the lazy worker thread after debounce.
     void submit(TranslationJob job, UpdateCallback on_update);
 
-    /// Cancels any pending or in-flight request without shutting down the worker.
+    /// Cancels any pending or in-flight request without shutting down the engine.
     void cancelAll();
 
     /// Stops worker thread cleanly (called automatically by destructor).
     void shutdown();
+
+    /// Returns true if the background translation worker thread is currently active.
+    bool isWorkerRunning() const;
 
 private:
     struct PendingJob {
@@ -117,16 +121,21 @@ private:
     HttpTransport transport_;
     LruTranslationCache cache_;
     OfflineDictionary offline_dict_;
+    int worker_idle_timeout_ms_ = 45000;
 
-    std::mutex mu_;
+    mutable std::mutex mu_;
     std::condition_variable cv_;
     bool stop_ = false;
     bool has_pending_ = false;
+    bool worker_running_ = false;
     PendingJob pending_;
     uint64_t latest_revision_ = 0;
     std::shared_ptr<std::atomic<bool>> current_cancel_;
     std::thread worker_;
 };
+
+/// Returns the per-user runtime path used to coordinate local HY-MT1.5 activity across processes.
+std::string hyMtActivityStampPath();
 
 /// Returns true when `model_name` identifies Tencent Hunyuan HY-MT / TY models.
 bool isHyMtModelName(std::string_view model_name);

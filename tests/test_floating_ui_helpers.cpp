@@ -1,10 +1,12 @@
 #include "clipboard_monitor.hpp"
 #include "hotkey_util.hpp"
+#include "theme_util.hpp"
 #include "ty_model_helpers.hpp"
 #include "zh_env_fixer.hpp"
 
 #include <QDir>
 #include <QFile>
+#include <QGuiApplication>
 #include <QKeySequence>
 #include <QList>
 #include <QTemporaryDir>
@@ -16,7 +18,12 @@
 #include <cassert>
 #include <iostream>
 
-int main() {
+int main(int argc, char **argv) {
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
+    QGuiApplication app(argc, argv);
+
     using shadowbar::floating_ui::fcitxToQtKeySequenceString;
     using shadowbar::floating_ui::fcitxToQtKeySequences;
     using shadowbar::floating_ui::qtKeySequenceToFcitx;
@@ -72,18 +79,40 @@ int main() {
     assert(args_auto.contains("-m"));
     assert(args_auto.contains("--port"));
     assert(args_auto.contains("18081"));
+    assert(args_auto.contains("-np"));
+    assert(args_auto.contains("1"));
     assert(!args_auto.contains("-t"));
 
     const QStringList args_th = buildTyServerArgs("/tmp/m.gguf", 99999, 8);
     assert(args_th.contains("65535"));
     assert(args_th.contains("-t"));
     assert(args_th.contains("8"));
+    assert(args_th.contains("-np"));
+
+    // Idle unload & llama-server /slots inspection helpers
+    using shadowbar::floating_ui::parseLlamaSlotsBusy;
+    using shadowbar::floating_ui::shouldUnloadIdleTyModel;
+    using shadowbar::floating_ui::tySlotsEndpoint;
+    assert(tySlotsEndpoint(18081) == "http://127.0.0.1:18081/slots");
+    assert(parseLlamaSlotsBusy(R"([{"id":0,"is_processing":true}])"));
+    assert(parseLlamaSlotsBusy(R"([{"id":0,"state":2}])"));
+    assert(!parseLlamaSlotsBusy(R"([{"id":0,"is_processing":false,"state":0}])"));
+    assert(!parseLlamaSlotsBusy(R"(invalid json)"));
+    assert(!shouldUnloadIdleTyModel(false, 300, 999999, 0));
+    assert(!shouldUnloadIdleTyModel(true, 0, 999999, 0));
+    assert(!shouldUnloadIdleTyModel(true, 300, 400000, 1));
+    assert(!shouldUnloadIdleTyModel(true, 300, 299999, 0));
+    assert(shouldUnloadIdleTyModel(true, 300, 300000, 0));
 
     shadowbar::ShadowConfig cfg;
     cfg.hymt_port = 18085;
     cfg.hymt_model_125bit_path = "/opt/models/custom125.gguf";
     assert(resolvedTyModelPath(cfg, "1.25bit") == "/opt/models/custom125.gguf");
     assert(resolvedTyModelPath(cfg, "2bit").endsWith("/Hy-MT1.5-1.8B-2bit.gguf"));
+
+    assert(tyModelSpec("1.25bit").preset_label == "混元 HY-MT1.5 (1.25bit)");
+    assert(tyModelSpec("2bit").preset_label == "混元 HY-MT1.5 (2bit)");
+    assert(tyModelSpec("custom").preset_label == "混元 HY-MT1.5 (自定义)");
 
     upsertTyPreset(cfg, "1.25bit", true, "en");
     assert(cfg.active_preset == "ty_125bit");
@@ -182,6 +211,19 @@ int main() {
     assert(!clipboardAvoidReasonText(ClipboardAvoidReason::FileOrPath).isEmpty());
     assert(!clipboardAvoidReasonText(ClipboardAvoidReason::UrlOrLink).isEmpty());
     assert(clipboardAvoidReasonText(ClipboardAvoidReason::None).isEmpty());
+
+    // Popup-only clipboard monitor subscription lifecycle (no background listeners when disarmed)
+    {
+        shadowbar::floating_ui::ClipboardMonitor monitor;
+        assert(!monitor.isWatchEnabled());
+        assert(!monitor.hasActiveBackgroundWatch());
+        monitor.setWatchEnabled(true);
+        assert(monitor.isWatchEnabled());
+        assert(monitor.hasActiveBackgroundWatch());
+        monitor.setWatchEnabled(false);
+        assert(!monitor.isWatchEnabled());
+        assert(!monitor.hasActiveBackgroundWatch());
+    }
 
     // ZhEnvFixer pure planners & checkers tests
     assert(detectDistroFamily("ID=arch\nNAME=\"Arch Linux\"\n") ==
@@ -315,6 +357,34 @@ int main() {
         const ZhEnvDiagReport prof_rep =
             ZhEnvFixer::inspectEnvironment(tmp_cfg.path());
         assert(prof_rep.profile_ok);
+    }
+
+    // System theme following & solid opaque popup color checks
+    {
+        QPalette dark_pal;
+        dark_pal.setColor(QPalette::Window, QColor(24, 28, 36));
+        dark_pal.setColor(QPalette::Base, QColor(18, 21, 28));
+        dark_pal.setColor(QPalette::WindowText, QColor(235, 240, 248));
+        dark_pal.setColor(QPalette::Highlight, QColor(59, 130, 246));
+        const ThemeTokens dark_t = resolveThemeTokens(dark_pal, true);
+        assert(dark_t.dark);
+        assert(dark_t.popup_bg.alpha() == 255);
+        assert(dark_t.popup_border.alpha() == 255);
+        assert(dark_t.popup_hover.alpha() == 255);
+        assert(dark_t.surface.red() < 50);
+
+        QPalette light_pal;
+        light_pal.setColor(QPalette::Window, QColor(245, 247, 250));
+        light_pal.setColor(QPalette::Base, QColor(255, 255, 255));
+        light_pal.setColor(QPalette::WindowText, QColor(20, 24, 31));
+        light_pal.setColor(QPalette::Highlight, QColor(250, 204, 21));
+        const ThemeTokens light_t = resolveThemeTokens(light_pal, false);
+        assert(!light_t.dark);
+        assert(light_t.popup_bg.alpha() == 255);
+        assert(light_t.popup_border.alpha() == 255);
+        assert(light_t.popup_hover.alpha() == 255);
+        // Bright yellow accent automatically selects dark readable ink.
+        assert(light_t.accent_text.lightness() < 80);
     }
 
     std::cout << "All floating UI helper tests passed!\n";

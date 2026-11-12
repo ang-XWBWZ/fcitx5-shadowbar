@@ -195,7 +195,7 @@ void SettingsView::buildUi() {
     tabs_ = new QTabWidget(this);
     tabs_->addTab(buildPresetsTab(), "API 与译文预设");
     tabs_->addTab(buildGeneralTab(), "输入法、快捷键与悬浮窗");
-    tabs_->addTab(buildTyModelTab(), "TY 模型 (1.25bit/2bit)");
+    tabs_->addTab(buildTyModelTab(), "混元 HY-MT1.5 (1.25bit/2bit)");
     tabs_->addTab(buildZhEnvTab(), "中文环境修复");
     connect(tabs_, &QTabWidget::currentChanged, this, [this](int idx) {
         if (idx == 3 && zh_fixer_ && !zh_fixer_->isBusy()) {
@@ -309,7 +309,7 @@ QWidget *SettingsView::buildPresetsTab() {
 
     auto *ty_tpl_row = new QHBoxLayout();
     ty_tpl_row->setSpacing(4);
-    auto *ty_tpl_lbl = new QLabel("本地 TY:", form_host);
+    auto *ty_tpl_lbl = new QLabel("腾讯混元:", form_host);
     ty_tpl_lbl->setObjectName("SubtleStatus");
     ty_tpl_row->addWidget(ty_tpl_lbl);
 
@@ -326,8 +326,8 @@ QWidget *SettingsView::buildPresetsTab() {
         });
         ty_tpl_row->addWidget(b);
     };
-    add_ty_tpl_btn("TY 1.25bit", QStringLiteral("1.25bit"));
-    add_ty_tpl_btn("TY 2bit", QStringLiteral("2bit"));
+    add_ty_tpl_btn("混元 1.25bit", QStringLiteral("1.25bit"));
+    add_ty_tpl_btn("混元 2bit", QStringLiteral("2bit"));
 
     auto *goto_ty_btn = new QPushButton("管理本地模型与服务 →", form_host);
     goto_ty_btn->setObjectName("ChipButton");
@@ -476,7 +476,7 @@ QWidget *SettingsView::buildGeneralTab() {
     floating_autoread_check_ =
         new QCheckBox("主动打开悬浮窗时默认读取剪贴板（后台绝不自动弹窗）", fl_group);
     floating_watch_check_ = new QCheckBox(
-        "悬浮窗打开时后台自动监听剪贴板变更并翻译（自动避让文件与链接）",
+        "仅在悬浮窗打开时自动监听剪贴板并翻译（弹窗收起即停用监听 · 自动避让文件与链接）",
         fl_group);
     floating_orb_check_ =
         new QCheckBox("在桌面显示可拖动的迷你悬浮球 (✦)", fl_group);
@@ -742,7 +742,7 @@ void SettingsView::applyTheme() {
     setStyleSheet(QString(
         "QGroupBox {"
         "  border: 1px solid %1;"
-        "  border-radius: 8px;"
+        "  border-radius: 10px;"
         "  margin-top: 10px;"
         "  padding-top: 10px;"
         "  color: %2;"
@@ -757,17 +757,20 @@ void SettingsView::applyTheme() {
         "  background: %3;"
         "  color: %2;"
         "  border: 1px solid %1;"
-        "  border-radius: 6px;"
-        "  padding: 4px 7px;"
+        "  border-radius: 7px;"
+        "  padding: 4px 8px;"
+        "}"
+        "QComboBox:hover, QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus {"
+        "  border: 1px solid %9;"
         "}"
         "QListWidget::item { padding: 6px 8px; border-radius: 5px; }"
         "QListWidget::item:selected { background: %4; color: %2; font-weight: 600; }"
-        "QTabWidget::pane { border: 1px solid %1; border-radius: 8px; }"
+        "QTabWidget::pane { border: 1px solid %1; border-radius: 10px; }"
         "QTabBar::tab {"
         "  padding: 6px 14px;"
         "  margin-right: 4px;"
-        "  border-top-left-radius: 6px;"
-        "  border-top-right-radius: 6px;"
+        "  border-top-left-radius: 7px;"
+        "  border-top-right-radius: 7px;"
         "  color: %5;"
         "  background: %6;"
         "}"
@@ -782,14 +785,26 @@ void SettingsView::applyTheme() {
         "  color: %2;"
         "  border: 1px solid %1;"
         "  border-radius: 10px;"
-        "  padding: 2px 8px;"
+        "  padding: 3px 9px;"
         "  font-size: 11px;"
         "}"
-        "QPushButton#ChipButton:hover { background: %8; }")
+        "QPushButton#ChipButton:hover { background: %8; border: 1px solid %9; }"
+        "QToolTip {"
+        "  background-color: %10;"
+        "  color: %2;"
+        "  border: 1px solid %11;"
+        "  border-radius: 6px;"
+        "  padding: 4px 8px;"
+        "}")
                       .arg(cssRgba(t.border), t.text_primary.name(),
                            cssRgba(t.surface_input), cssRgba(t.accent_soft),
                            t.text_secondary.name(), cssRgba(t.pill_bg),
-                           cssRgba(t.surface_elevated), cssRgba(t.hover_bg)));
+                           cssRgba(t.surface_elevated), cssRgba(t.hover_bg),
+                           t.accent.name(), t.popup_bg.name(),
+                           t.popup_border.name()));
+    for (QComboBox *cb : findChildren<QComboBox *>()) {
+        applyOpaqueComboTheme(cb, t);
+    }
 }
 
 void SettingsView::refreshPresetList(int select_row) {
@@ -1189,6 +1204,7 @@ void SettingsView::rebuildDictTable() {
 
         auto *src_cb = new QComboBox(dict_table_);
         populateSourceLangCombo(src_cb, true, QStringLiteral("自动"));
+        applyOpaqueComboTheme(src_cb, resolveThemeTokens());
         selectComboByData(
             src_cb,
             QString::fromStdString(spec.source_lang.empty()
@@ -1202,6 +1218,7 @@ void SettingsView::rebuildDictTable() {
 
         auto *tgt_cb = new QComboBox(dict_table_);
         populateSourceLangCombo(tgt_cb, true, QStringLiteral("自动"));
+        applyOpaqueComboTheme(tgt_cb, resolveThemeTokens());
         selectComboByData(
             tgt_cb,
             QString::fromStdString(spec.target_lang.empty()
@@ -1749,7 +1766,7 @@ QWidget *SettingsView::buildTyModelTab() {
     ty_threads_spin_->setSpecialValueText("自动");
     ty_threads_spin_->setSuffix(" 线程");
 
-    ty_auto_start_check_ = new QCheckBox("选用 TY 预设时自动启停对应版本", svc_group);
+    ty_auto_start_check_ = new QCheckBox("选用混元 HY-MT1.5 预设时自动启停对应版本", svc_group);
     rt_row->addWidget(new QLabel("端口:", svc_group));
     rt_row->addWidget(ty_port_spin_);
     rt_row->addWidget(new QLabel("线程:", svc_group));
@@ -1757,11 +1774,25 @@ QWidget *SettingsView::buildTyModelTab() {
     rt_row->addWidget(ty_auto_start_check_, 1);
     s_form->addRow("运行参数:", rt_row);
 
+    auto *bk_row = new QHBoxLayout();
+    bk_row->setSpacing(8);
     ty_backend_combo_ = new QComboBox(svc_group);
     ty_backend_combo_->addItem("首选 Vulkan GPU，失败自动回退 CPU（推荐）", "auto");
     ty_backend_combo_->addItem("仅尝试 Vulkan GPU (-ngl 99)", "vulkan");
     ty_backend_combo_->addItem("仅 CPU AVX2 (-ngl 0)", "cpu");
-    s_form->addRow("推理后端:", ty_backend_combo_);
+
+    ty_idle_unload_spin_ = new QSpinBox(svc_group);
+    ty_idle_unload_spin_->setRange(0, 180);
+    ty_idle_unload_spin_->setSpecialValueText("常驻不卸载");
+    ty_idle_unload_spin_->setSuffix(" 分钟");
+    ty_idle_unload_spin_->setToolTip(
+        "无翻译请求且本地推理槽位空闲达到该时长后，自动退出 llama-server 释放内存/显存；"
+        "下次打开弹窗或输入翻译时再按需拉起");
+
+    bk_row->addWidget(ty_backend_combo_, 1);
+    bk_row->addWidget(new QLabel("空闲卸载:", svc_group));
+    bk_row->addWidget(ty_idle_unload_spin_);
+    s_form->addRow("推理后端:", bk_row);
     s_lay->addLayout(s_form);
 
     auto *ctrl_row = new QHBoxLayout();
@@ -1931,6 +1962,16 @@ void SettingsView::loadTyFields() {
         normalizeTyBackend(QString::fromStdString(working_config_.hymt_backend)));
     ty_port_spin_->setValue(std::clamp(working_config_.hymt_port, 1024, 65535));
     ty_threads_spin_->setValue(std::clamp(working_config_.hymt_threads, 0, 256));
+    const int idle_sec =
+        std::clamp(working_config_.hymt_idle_unload_sec, 0, 86400);
+    ty_loaded_idle_minutes_ =
+        (idle_sec == 0) ? 0 : std::clamp((idle_sec + 59) / 60, 1, 180);
+    if (ty_idle_unload_spin_) {
+        ty_idle_unload_spin_->setValue(ty_loaded_idle_minutes_);
+    }
+    if (ty_mgr_) {
+        ty_mgr_->setIdleUnloadSeconds(working_config_.hymt_idle_unload_sec);
+    }
     ty_auto_start_check_->setChecked(working_config_.hymt_auto_start);
 
     ty_server_path_edit_->setText(
@@ -1955,6 +1996,10 @@ void SettingsView::collectTyFields(ShadowConfig &cfg) const {
         ty_backend_combo_->currentData().toString().toStdString();
     cfg.hymt_port = ty_port_spin_->value();
     cfg.hymt_threads = ty_threads_spin_->value();
+    if (ty_idle_unload_spin_ &&
+        ty_idle_unload_spin_->value() != ty_loaded_idle_minutes_) {
+        cfg.hymt_idle_unload_sec = ty_idle_unload_spin_->value() * 60;
+    }
     cfg.hymt_mirror =
         ty_mirror_combo_->currentData().toString().toStdString();
     cfg.hymt_auto_start = ty_auto_start_check_->isChecked();
@@ -2054,6 +2099,7 @@ void SettingsView::onTyStartStopClicked(bool start) {
         return;
     }
     const ShadowConfig cfg = currentTyEffectiveConfig();
+    ty_mgr_->setIdleUnloadSeconds(cfg.hymt_idle_unload_sec);
     const QString variant = selectedTyVariant();
     const QString bin = resolvedTyServerBinary(cfg);
     const QString model_path = resolvedTyModelPath(cfg, variant);
@@ -2100,6 +2146,7 @@ void SettingsView::onTyTrialTranslate() {
     }
 
     const ShadowConfig cfg = currentTyEffectiveConfig();
+    ty_mgr_->setIdleUnloadSeconds(cfg.hymt_idle_unload_sec);
     const QString variant = selectedTyVariant();
     const QString model_path = resolvedTyModelPath(cfg, variant);
     const QString bin_path = resolvedTyServerBinary(cfg);
@@ -2160,6 +2207,10 @@ void SettingsView::runTyTrialTranslation(const QString &variant,
     QElapsedTimer elapsed;
     elapsed.start();
     QPointer<SettingsView> self(this);
+    if (ty_mgr_) {
+        ty_mgr_->setIdleUnloadSeconds(cfg.hymt_idle_unload_sec);
+        ty_mgr_->beginTranslationActivity();
+    }
 
     test_engine_->submit(
         TranslationJob{
@@ -2194,6 +2245,9 @@ void SettingsView::runTyTrialTranslation(const QString &variant,
                                 .arg(variant)
                                 .arg(elapsed.elapsed()));
                         return;
+                    }
+                    if (self->ty_mgr_) {
+                        self->ty_mgr_->endTranslationActivity();
                     }
                     self->ty_trial_btn_->setEnabled(true);
                     if (res.ok) {

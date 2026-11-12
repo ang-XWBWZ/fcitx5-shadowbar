@@ -20,7 +20,8 @@ QString parseActionFlag(const QStringList &args) {
     for (int i = 1; i < args.size(); ++i) {
         const QString &a = args.at(i);
         if (a == "--toggle" || a == "--show" || a == "--settings" ||
-            a == "--sync-orb" || a == "--reset" || a == "--quit") {
+            a == "--sync-orb" || a == "--wake-ty" || a == "--reset" ||
+            a == "--quit") {
             return a;
         }
         if (a == "--help" || a == "-h") {
@@ -39,6 +40,9 @@ QString dbusMethodForAction(const QString &action) {
     }
     if (action == "--sync-orb") {
         return "SyncOrb";
+    }
+    if (action == "--wake-ty") {
+        return "WakeTy";
     }
     if (action == "--reset") {
         return "ResetWindow";
@@ -60,11 +64,12 @@ int main(int argc, char **argv) {
     const QString action = parseActionFlag(raw_args);
     if (action == "--help") {
         std::cout
-            << "Usage: shadowbar-float [--toggle|--show|--settings|--sync-orb|--reset|--quit]\n"
+            << "Usage: shadowbar-float [--toggle|--show|--settings|--sync-orb|--wake-ty|--reset|--quit]\n"
             << "  --toggle     Toggle floating translation window (default)\n"
             << "  --show       Show floating window and read clipboard if enabled\n"
             << "  --settings   Open tabbed Settings & API preset manager\n"
             << "  --sync-orb   Sync desktop floating orb visibility from config.toml\n"
+            << "  --wake-ty    Silently prewarm/wake local HY-MT model server if enabled\n"
             << "  --reset      Reset floating window position & size to screen center\n"
             << "  --quit       Quit background floating UI service\n";
         return 0;
@@ -89,6 +94,12 @@ int main(int argc, char **argv) {
         cfg_mgr.ensureAndLoad();
         if (!(cfg_mgr.config().floating_enabled &&
               cfg_mgr.config().floating_show_orb)) {
+            return 0;
+        }
+    } else if (action == "--wake-ty") {
+        shadowbar::ConfigManager cfg_mgr;
+        cfg_mgr.ensureAndLoad();
+        if (!cfg_mgr.config().hymt_auto_start) {
             return 0;
         }
     }

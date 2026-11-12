@@ -192,6 +192,9 @@ private:
     void setupStatusMenu();
     void updateStatusMenuState();
     void launchFloatingUi(const std::string &arg) const;
+    void maybeWakeLocalTy(const ShadowConfig &cfg,
+                          bool is_local_hymt,
+                          bool force_on_error);
     void toggleOrbFromMenu();
 
     friend class ShadowBarToggleAction;
@@ -221,6 +224,8 @@ private:
     bool bypass_commit_filter_ = false;
     bool replaying_key_ = false;
     bool rendering_panel_ = false;
+    SteadyTimePoint last_ty_wake_attempt_{};
+    SteadyTimePoint last_local_hymt_ok_{};
 };
 
 class ShadowBarAddonFactory final : public fcitx::AddonFactory {

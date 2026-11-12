@@ -185,6 +185,8 @@ private:
     QLineEdit *ty_model_custom_edit_ = nullptr;
     QSpinBox *ty_port_spin_ = nullptr;
     QSpinBox *ty_threads_spin_ = nullptr;
+    QSpinBox *ty_idle_unload_spin_ = nullptr;
+    int ty_loaded_idle_minutes_ = 5;
     QCheckBox *ty_auto_start_check_ = nullptr;
     QPushButton *ty_download_btn_ = nullptr;
     QPushButton *ty_cancel_dl_btn_ = nullptr;

@@ -33,7 +33,7 @@ A fast, always-ready Qt6 translation popup tailored for Wayland (KDE Plasma / GN
 ```
 
 - **Instant Global Toggle & Desktop Orb**: Press `Alt+Shift+Q` from any app to show/hide the popup, or enable the draggable floating desktop orb (left-click expand/collapse, right-click quick actions).
-- **Unfocused Background Clipboard Watch on Wayland**: Combines `wl-paste --watch`, KDE Klipper D-Bus signals, and `QClipboard` so copied text translates automatically **without focusing or pinning the popup**.
+- **Popup-Only Unfocused Clipboard Watch (Zero Background Listeners)**: Combines `wl-paste --watch`, KDE Klipper D-Bus signals, and `QClipboard` **only while the popup window is open** so copied text translates without focusing or pinning, then cleanly disconnects all listeners and probes the instant you hide or close the popup.
 - **Built-in Clipboard Safety Guards**: Automatically skips password/sensitive hints, local file URIs/paths (`/home/...`, `file://`), URLs, Markdown links, and binary non-text payloads.
 - **Popup Productivity Features**:
   - **20-Language Auto-Detection & Quick Swap**: Automatically detects source language and flips direction (`Alt+S` swaps languages, `Alt+V` pulls current clipboard).
@@ -69,7 +69,7 @@ ShadowBar routes across cloud APIs, local quantized LLMs, and zero-latency offli
 | --- | --- | --- |
 | **Cloud LLMs & APIs** | OpenAI-compatible (DeepSeek, GPT, custom endpoints), DeepL, Ollama | Custom system prompts (`Direct`, `Natural`, `Work`, etc.), async debouncing & cancel-on-type |
 | **Zero-Config Online** | Google Free | Instant setup with no API key required across all 20 languages |
-| **Local Offline AI** | **Hunyuan `HY-MT1.5-1.8B`** (`1.25bit` ~441 MB / `2bit` ~573 MB / custom `.gguf`) | Built-in `HuggingFace` / `HF-Mirror` downloader & `llama-server` controller; **`auto` tries Vulkan GPU first and falls back to CPU cleanly** |
+| **Local Offline AI** | **Hunyuan `HY-MT1.5-1.8B`** (`1.25bit` ~441 MB / `2bit` ~573 MB / custom `.gguf`) | Built-in `HuggingFace` / `HF-Mirror` downloader, single-slot KV tuned `llama-server` (`auto`: Vulkan GPU first, CPU fallback), **idle auto-unload** & on-demand wake |
 | **Millisecond Offline Dicts** | ECDICT (`.db`/`.sqlite`/`.csv`), StarDict (`.ifo`/`.idx`/`.dict.dz`), CC-CEDICT (`.u8`), JSON/JSONL, TSV | Instant offline lookups & fallback; mount multiple language-pair dicts simultaneously via Settings or `[dicts.<id>]` |
 
 **20 Canonical Languages Supported (+ `auto` detection):** `en`, `zh`, `zh-TW`, `ja`, `ko`, `fr`, `de`, `es`, `pt`, `ru`, `it`, `ar`, `th`, `vi`, `id`, `hi`, `nl`, `pl`, `tr`, `uk`.
@@ -102,13 +102,13 @@ ctest --test-dir build --output-on-failure -V
 # Install into ~/.local (no root required)
 ./scripts/install_user.sh
 
-# Launch settings & popup (API presets, TY local model, dicts & one-click Chinese env fixer)
+# Launch settings & popup (API presets, Hunyuan HY-MT1.5 local model, dicts & one-click Chinese env fixer)
 shadowbar-float --settings
 ```
 
 > **Fresh Host Setup Tip:** Tab 4 (**`中文环境修复` / Chinese Environment Fixer**) inside `shadowbar-float --settings` automatically checks and repairs Fcitx5 packages, CJK monospace font fallback, `~/.config/fcitx5/profile`, and Wayland/X11 IME environment variables on Arch, Debian/Ubuntu, Fedora/RHEL, and openSUSE.
 
-See **[docs/INSTALL.md](docs/INSTALL.md)** ([中文安装指南](docs/INSTALL.zh-CN.md)) for full distro packages, `.deb` builds, Wayland/X11 setup, local TY GGUF runtime, and external dictionary mounting. You can also test translation routing immediately in terminal via `./build/cli-sim/shadowbar-sim`.
+See **[docs/INSTALL.md](docs/INSTALL.md)** ([中文安装指南](docs/INSTALL.zh-CN.md)) for full distro packages, `.deb` builds, Wayland/X11 setup, local Hunyuan HY-MT1.5 GGUF runtime, and external dictionary mounting. You can also test translation routing immediately in terminal via `./build/cli-sim/shadowbar-sim`.
 
 ---
 
@@ -117,7 +117,7 @@ See **[docs/INSTALL.md](docs/INSTALL.md)** ([中文安装指南](docs/INSTALL.zh
 | Path | Purpose | License |
 | --- | --- | --- |
 | `core/` | C++20 translation pipeline, session state machine, 20-language registry, TOML hot-reload config, sentence splitter & offline dictionary engine | `PolyForm-Noncommercial-1.0.0` |
-| `floating-ui/` | `shadowbar-float` Qt6 popup window, desktop orb, Wayland/X11 clipboard monitor, TY model manager & Chinese env fixer | `PolyForm-Noncommercial-1.0.0` |
+| `floating-ui/` | `shadowbar-float` Qt6 popup window, desktop orb, Wayland/X11 clipboard monitor, Hunyuan HY-MT1.5 model manager & Chinese env fixer | `PolyForm-Noncommercial-1.0.0` |
 | `fcitx5-addon/` | `libshadowbar.so` companion addon & `libshadowbarim.so` virtual IM | `PolyForm-Noncommercial-1.0.0` |
 | `cli-sim/` | `shadowbar-sim` standalone CLI simulator | `PolyForm-Noncommercial-1.0.0` |
 | `tests/` | CTest suites (`test_core`, `test_fcitx5_integration`, `test_floating_ui_helpers`) | `PolyForm-Noncommercial-1.0.0` |

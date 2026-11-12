@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <limits>
 
 namespace shadowbar::floating_ui {
 
@@ -18,7 +19,8 @@ namespace {
 
 constexpr int kMaxLogLines = 80;
 constexpr int kStartupTimeoutMs = 30000;
-constexpr int kHealthPollMs = 250;
+constexpr int kHealthPollMs = 150;
+constexpr int kProbeWorkerIdleMs = 5000;
 
 } // namespace
 
@@ -41,6 +43,11 @@ TyModelManager::TyModelManager(QObject *parent) : QObject(parent) {
             setState(ServerState::Error, QStringLiteral("启动超时（30s 内未就绪）"));
         }
     });
+
+    idle_timer_ = new QTimer(this);
+    idle_timer_->setSingleShot(true);
+    connect(idle_timer_, &QTimer::timeout, this,
+            &TyModelManager::onIdleTimerFired);
 }
 
 TyModelManager::~TyModelManager() {
@@ -55,14 +62,26 @@ void TyModelManager::shutdown() {
     if (startup_timeout_timer_) {
         startup_timeout_timer_->stop();
     }
+    if (idle_timer_) {
+        idle_timer_->stop();
+    }
     cancelDownload();
     stopServer();
     joinProbeThread();
 }
 
 void TyModelManager::joinProbeThread() {
-    if (probe_thread_.joinable()) {
-        probe_thread_.join();
+    std::thread to_join;
+    {
+        std::lock_guard<std::mutex> lock(probe_mu_);
+        probe_stop_ = true;
+        has_pending_probe_ = false;
+        probe_worker_running_ = false;
+        to_join = std::move(probe_thread_);
+    }
+    probe_cv_.notify_all();
+    if (to_join.joinable()) {
+        to_join.join();
     }
 }
 
@@ -156,6 +175,7 @@ bool TyModelManager::startServer(const QString &binary_path,
             model_info.canonicalFilePath() &&
         QFileInfo(active_binary_path_).canonicalFilePath() ==
             bin_info.canonicalFilePath()) {
+        markActivity();
         return true;
     }
 
@@ -191,44 +211,59 @@ void TyModelManager::spawnServerProcess(int gpu_layers) {
             return;
         }
         server_stdout_buf_.append(server_proc_->readAllStandardOutput());
-        int nl = -1;
+        if (server_stdout_buf_.size() > 65536) {
+            server_stdout_buf_ = server_stdout_buf_.right(32768);
+        }
+        qsizetype pos = 0;
         QStringList lines;
-        while ((nl = server_stdout_buf_.indexOf('\n')) != -1) {
-            QByteArray line_bytes = server_stdout_buf_.left(nl);
-            server_stdout_buf_.remove(0, nl + 1);
-            if (line_bytes.endsWith('\r')) {
-                line_bytes.chop(1);
+        while (true) {
+            const qsizetype nl = server_stdout_buf_.indexOf('\n', pos);
+            if (nl == -1) {
+                break;
             }
-            const QString decoded = QString::fromUtf8(line_bytes).trimmed();
+            qsizetype len = nl - pos;
+            if (len > 0 && server_stdout_buf_[pos + len - 1] == '\r') {
+                --len;
+            }
+            const QString decoded =
+                QString::fromUtf8(server_stdout_buf_.constData() + pos, len)
+                    .trimmed();
             if (!decoded.isEmpty()) {
                 lines.append(decoded);
             }
+            pos = nl + 1;
         }
+        if (pos > 0) {
+            server_stdout_buf_.remove(0, pos);
+        }
+        const bool check_startup_signals = (state_ == ServerState::Starting);
         QString fallback_reason;
         for (const QString &l : lines) {
-            const TyServerLogSignal sig = inspectTyServerLogLine(l);
-            if (sig.vulkan_device_found) {
-                vulkan_device_seen_ = true;
-            }
-            if (sig.no_vulkan_device) {
-                no_vulkan_seen_ = true;
-                if (active_gpu_layers_ > 0 && fallback_reason.isEmpty()) {
-                    fallback_reason = QStringLiteral("未检测到可用 Vulkan GPU 设备");
+            if (check_startup_signals) {
+                const TyServerLogSignal sig = inspectTyServerLogLine(l);
+                if (sig.vulkan_device_found) {
+                    vulkan_device_seen_ = true;
                 }
-            }
-            if (sig.has_layer_offload) {
-                offloaded_layers_ = sig.offloaded_layers;
-                total_layers_ = sig.total_layers;
-                if (sig.offloaded_layers > 0) {
-                    using_vulkan_ = true;
+                if (sig.no_vulkan_device) {
+                    no_vulkan_seen_ = true;
+                    if (active_gpu_layers_ > 0 && fallback_reason.isEmpty()) {
+                        fallback_reason = QStringLiteral("未检测到可用 Vulkan GPU 设备");
+                    }
                 }
-                if (active_gpu_layers_ > 0 && sig.total_layers > 0 &&
-                    sig.offloaded_layers < sig.total_layers &&
-                    fallback_reason.isEmpty()) {
-                    fallback_reason =
-                        QStringLiteral("Vulkan 仅部分卸载 (%1/%2 层)")
-                            .arg(sig.offloaded_layers)
-                            .arg(sig.total_layers);
+                if (sig.has_layer_offload) {
+                    offloaded_layers_ = sig.offloaded_layers;
+                    total_layers_ = sig.total_layers;
+                    if (sig.offloaded_layers > 0) {
+                        using_vulkan_ = true;
+                    }
+                    if (active_gpu_layers_ > 0 && sig.total_layers > 0 &&
+                        sig.offloaded_layers < sig.total_layers &&
+                        fallback_reason.isEmpty()) {
+                        fallback_reason =
+                            QStringLiteral("Vulkan 仅部分卸载 (%1/%2 层)")
+                                .arg(sig.offloaded_layers)
+                                .arg(sig.total_layers);
+                    }
                 }
             }
             appendLog(l);
@@ -331,6 +366,9 @@ void TyModelManager::stopServerProcessOnly() {
     if (startup_timeout_timer_) {
         startup_timeout_timer_->stop();
     }
+    if (idle_timer_) {
+        idle_timer_->stop();
+    }
     ++probe_generation_;
 
     if (server_proc_) {
@@ -366,46 +404,101 @@ void TyModelManager::pollStartupHealth() {
         }
         return;
     }
-    launchHealthProbeAsync(probe_generation_, active_port_);
+    enqueueProbe(ProbeKind::Health, probe_generation_, active_port_);
 }
 
 void TyModelManager::probeHealthOnce(int port) {
     active_port_ = std::clamp(port, 1024, 65535);
-    launchHealthProbeAsync(probe_generation_, active_port_);
+    enqueueProbe(ProbeKind::Health, probe_generation_, active_port_);
 }
 
-void TyModelManager::launchHealthProbeAsync(uint64_t generation, int port) {
+void TyModelManager::enqueueProbe(ProbeKind kind,
+                                  uint64_t generation,
+                                  int port) {
     if (shutting_down_.load(std::memory_order_acquire)) {
         return;
     }
-    if (probe_in_flight_.exchange(true, std::memory_order_acq_rel)) {
-        return;
+    std::thread retired_thread;
+    {
+        std::lock_guard<std::mutex> lock(probe_mu_);
+        if (probe_stop_) {
+            return;
+        }
+        pending_probe_kind_ = kind;
+        pending_probe_gen_ = generation;
+        pending_probe_port_ = port;
+        has_pending_probe_ = true;
+        if (!probe_worker_running_) {
+            if (probe_thread_.joinable()) {
+                retired_thread = std::move(probe_thread_);
+            }
+            probe_worker_running_ = true;
+            probe_thread_ = std::thread([this]() { probeWorkerLoop(); });
+        }
     }
-    joinProbeThread();
+    if (retired_thread.joinable()) {
+        retired_thread.join();
+    }
+    probe_cv_.notify_one();
+}
 
-    const std::string url = tyHealthEndpoint(port).toStdString();
-    probe_thread_ = std::thread([this, generation, port, url]() {
-        bool healthy = false;
+void TyModelManager::probeWorkerLoop() {
+    std::unique_lock<std::mutex> lock(probe_mu_);
+    while (!probe_stop_ && !shutting_down_.load(std::memory_order_acquire)) {
+        if (!has_pending_probe_) {
+            const bool woke = probe_cv_.wait_for(
+                lock, std::chrono::milliseconds(kProbeWorkerIdleMs),
+                [this]() {
+                    return probe_stop_ || has_pending_probe_ ||
+                           shutting_down_.load(std::memory_order_acquire);
+                });
+            if (!woke && !has_pending_probe_) {
+                probe_worker_running_ = false;
+                return;
+            }
+            continue;
+        }
+
+        const ProbeKind kind = pending_probe_kind_;
+        const uint64_t generation = pending_probe_gen_;
+        const int port = pending_probe_port_;
+        has_pending_probe_ = false;
+        lock.unlock();
+
+        bool result_flag = false;
         if (!shutting_down_.load(std::memory_order_acquire)) {
             std::atomic<bool> cancel{false};
             HttpRequest req;
             req.method = "GET";
-            req.url = url;
+            req.url = (kind == ProbeKind::Slots)
+                          ? tySlotsEndpoint(port).toStdString()
+                          : tyHealthEndpoint(port).toStdString();
             req.timeout_ms = 550;
             const HttpResponse resp = curlHttpTransport(req, cancel, {});
-            healthy = (resp.status_code == 200);
+            if (kind == ProbeKind::Slots) {
+                result_flag = (resp.status_code == 200) &&
+                              parseLlamaSlotsBusy(QByteArray::fromStdString(resp.body));
+            } else {
+                result_flag = (resp.status_code == 200);
+            }
         }
-        probe_in_flight_.store(false, std::memory_order_release);
-        if (shutting_down_.load(std::memory_order_acquire)) {
-            return;
+
+        if (!shutting_down_.load(std::memory_order_acquire)) {
+            QMetaObject::invokeMethod(
+                this,
+                [this, kind, generation, port, result_flag]() {
+                    if (kind == ProbeKind::Slots) {
+                        handleSlotsProbeResult(generation, port, result_flag);
+                    } else {
+                        handleHealthProbeResult(generation, port, result_flag);
+                    }
+                },
+                Qt::QueuedConnection);
         }
-        QMetaObject::invokeMethod(
-            this,
-            [this, generation, port, healthy]() {
-                handleHealthProbeResult(generation, port, healthy);
-            },
-            Qt::QueuedConnection);
-    });
+
+        lock.lock();
+    }
+    probe_worker_running_ = false;
 }
 
 void TyModelManager::handleHealthProbeResult(uint64_t generation,
@@ -452,7 +545,9 @@ void TyModelManager::handleHealthProbeResult(uint64_t generation,
                                     .arg(active_variant_, backend_tag)
                                     .arg(active_port_);
             appendLog(QStringLiteral("[ty] 就绪: ") + msg);
+            last_activity_timer_.restart();
             setState(ServerState::Running, msg);
+            scheduleIdleUnloadTimer();
         }
         return;
     }
@@ -465,6 +560,129 @@ void TyModelManager::handleHealthProbeResult(uint64_t generation,
             setState(ServerState::Stopped, QStringLiteral("未运行"));
         }
     }
+}
+
+void TyModelManager::setIdleUnloadSeconds(int seconds) {
+    const int clamped = std::clamp(seconds, 0, 86400);
+    if (idle_unload_sec_ == clamped) {
+        return;
+    }
+    idle_unload_sec_ = clamped;
+    if (idle_unload_sec_ <= 0) {
+        if (idle_timer_) {
+            idle_timer_->stop();
+        }
+        return;
+    }
+    if (state_ == ServerState::Running && isManagedProcessRunning() &&
+        active_requests_ == 0) {
+        const qint64 elapsed_ms =
+            last_activity_timer_.isValid() ? last_activity_timer_.elapsed() : 0;
+        const qint64 threshold_ms =
+            static_cast<qint64>(idle_unload_sec_) * 1000LL;
+        const qint64 remaining = std::max<qint64>(200, threshold_ms - elapsed_ms);
+        scheduleIdleUnloadTimer(remaining);
+    }
+}
+
+void TyModelManager::markActivity() {
+    last_activity_timer_.restart();
+    if (state_ == ServerState::Running && isManagedProcessRunning() &&
+        idle_unload_sec_ > 0 && active_requests_ == 0) {
+        scheduleIdleUnloadTimer();
+    }
+}
+
+void TyModelManager::beginTranslationActivity() {
+    ++active_requests_;
+    last_activity_timer_.restart();
+    if (idle_timer_) {
+        idle_timer_->stop();
+    }
+}
+
+void TyModelManager::endTranslationActivity() {
+    if (active_requests_ > 0) {
+        --active_requests_;
+    }
+    markActivity();
+}
+
+void TyModelManager::scheduleIdleUnloadTimer(qint64 delay_ms) {
+    if (!idle_timer_) {
+        return;
+    }
+    if (idle_unload_sec_ <= 0 || state_ != ServerState::Running ||
+        !isManagedProcessRunning() || active_requests_ > 0) {
+        idle_timer_->stop();
+        return;
+    }
+    const qint64 threshold_ms = static_cast<qint64>(idle_unload_sec_) * 1000LL;
+    const qint64 wait_ms =
+        (delay_ms >= 0) ? std::max<qint64>(100, delay_ms) : threshold_ms;
+    idle_timer_->start(static_cast<int>(
+        std::min<qint64>(wait_ms, std::numeric_limits<int>::max())));
+}
+
+void TyModelManager::onIdleTimerFired() {
+    if (state_ != ServerState::Running || !isManagedProcessRunning() ||
+        idle_unload_sec_ <= 0 || active_requests_ > 0) {
+        return;
+    }
+    const qint64 threshold_ms = static_cast<qint64>(idle_unload_sec_) * 1000LL;
+    const qint64 local_elapsed =
+        last_activity_timer_.isValid() ? last_activity_timer_.elapsed() : 0;
+    if (local_elapsed < threshold_ms) {
+        scheduleIdleUnloadTimer(threshold_ms - local_elapsed + 100);
+        return;
+    }
+    const qint64 ext_age_ms = readExternalHyMtActivityAgeMs();
+    if (ext_age_ms >= 0 && ext_age_ms < threshold_ms) {
+        scheduleIdleUnloadTimer(threshold_ms - ext_age_ms + 500);
+        return;
+    }
+    enqueueProbe(ProbeKind::Slots, probe_generation_, active_port_);
+}
+
+void TyModelManager::handleSlotsProbeResult(uint64_t generation,
+                                            int port,
+                                            bool busy) {
+    if (generation != probe_generation_ || port != active_port_ ||
+        state_ != ServerState::Running || !isManagedProcessRunning() ||
+        idle_unload_sec_ <= 0 || active_requests_ > 0) {
+        return;
+    }
+    if (busy) {
+        markActivity();
+        scheduleIdleUnloadTimer(
+            std::min<qint64>(static_cast<qint64>(idle_unload_sec_) * 1000LL, 30000));
+        return;
+    }
+    const qint64 threshold_ms = static_cast<qint64>(idle_unload_sec_) * 1000LL;
+    const qint64 local_elapsed =
+        last_activity_timer_.isValid() ? last_activity_timer_.elapsed() : 0;
+    const qint64 ext_age_ms = readExternalHyMtActivityAgeMs();
+    if (!shouldUnloadIdleTyModel(isManagedProcessRunning(), idle_unload_sec_,
+                                 local_elapsed, active_requests_) ||
+        (ext_age_ms >= 0 && ext_age_ms < threshold_ms)) {
+        scheduleIdleUnloadTimer();
+        return;
+    }
+    unloadForIdle();
+}
+
+void TyModelManager::unloadForIdle() {
+    if (state_ != ServerState::Running || !isManagedProcessRunning()) {
+        return;
+    }
+    const QString variant = active_variant_;
+    stopServerProcessOnly();
+    const int mins = std::max(1, (idle_unload_sec_ + 30) / 60);
+    appendLog(QStringLiteral("[ty] 连续 %1 分钟未激活，已自动卸载 %2 模型并释放内存/显存")
+                  .arg(mins)
+                  .arg(variant));
+    setState(ServerState::Stopped,
+             QStringLiteral("空闲已卸载 (%1 · 下次使用自动重装)").arg(variant));
 }
 
 bool TyModelManager::startDownload(const QString &variant,

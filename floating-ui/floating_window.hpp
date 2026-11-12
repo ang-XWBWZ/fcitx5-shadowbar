@@ -61,6 +61,7 @@ public slots:
     Q_SCRIPTABLE void Show();
     Q_SCRIPTABLE void ShowSettings();
     Q_SCRIPTABLE void SyncOrb();
+    Q_SCRIPTABLE void WakeTy();
     Q_SCRIPTABLE void ResetWindow();
     Q_SCRIPTABLE void QuitApp();
     Q_SCRIPTABLE void ReportWindowGeometry(const QString &caption,
@@ -71,6 +72,7 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void changeEvent(QEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void moveEvent(QMoveEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
@@ -99,6 +101,10 @@ private:
     void showSettingsPage();
     void returnToCardPage();
     void hideCard();
+    bool isPopupActiveOnScreen() const;
+    void cancelPopupTranslation();
+    void setPopupTyBusy(bool busy);
+    void maybePrewarmLocalTyServer();
 
     void readClipboardAndTranslate(bool force);
     void syncClipboardMonitorState();
@@ -150,6 +156,7 @@ private:
     std::unique_ptr<AsyncTranslationEngine> translator_;
     std::unique_ptr<TyModelManager> ty_mgr_;
     bool waiting_ty_server_ = false;
+    bool ty_translation_busy_ = false;
     std::unique_ptr<FloatingOrb> orb_;
     std::unique_ptr<ClipboardMonitor> clip_monitor_;
 
@@ -159,6 +166,7 @@ private:
     SettingsView *settings_view_ = nullptr;
 
     QWidget *header_bar_ = nullptr;
+    QWidget *control_bar_ = nullptr;
     QComboBox *source_combo_ = nullptr;
     QToolButton *swap_btn_ = nullptr;
     QComboBox *target_combo_ = nullptr;

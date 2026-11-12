@@ -1266,6 +1266,7 @@ void testHyMtPromptAndConfig() {
     cfg.hymt_model_125bit_path = "/tmp/Hy-MT1.5-1.8B-1.25bit.gguf";
     cfg.hymt_model_2bit_path = "/tmp/Hy-MT1.5-1.8B-2bit.gguf";
     cfg.hymt_custom_model_path = "/tmp/custom.gguf";
+    cfg.hymt_idle_unload_sec = 420;
     cfg.hymt_auto_start = false;
 
     const std::string dumped = ConfigManager::serializeToml(cfg);
@@ -1281,7 +1282,14 @@ void testHyMtPromptAndConfig() {
     assert(parsed.hymt_model_125bit_path == "/tmp/Hy-MT1.5-1.8B-1.25bit.gguf");
     assert(parsed.hymt_model_2bit_path == "/tmp/Hy-MT1.5-1.8B-2bit.gguf");
     assert(parsed.hymt_custom_model_path == "/tmp/custom.gguf");
+    assert(parsed.hymt_idle_unload_sec == 420);
     assert(parsed.hymt_auto_start == false);
+
+    ShadowConfig clamped;
+    assert(ConfigManager::parseToml("[hymt]\nidle_unload_sec = -5\n", clamped, &err));
+    assert(clamped.hymt_idle_unload_sec == 0);
+    assert(ConfigManager::parseToml("[hymt]\nidle_unload_sec = 999999\n", clamped, &err));
+    assert(clamped.hymt_idle_unload_sec == 86400);
 
     // 3. Single-turn OpenAI-compatible payload & sampling + special-token stripping
     std::vector<HttpRequest> seen;
@@ -1315,6 +1323,17 @@ void testHyMtPromptAndConfig() {
     assert(body.find("\"top_p\":0.6") != std::string::npos);
     assert(body.find("\"top_k\":20") != std::string::npos);
     assert(body.find("\"repeat_penalty\":1.05") != std::string::npos);
+    assert(body.find("\"max_tokens\":") != std::string::npos);
+    assert(body.find("\"cache_prompt\":true") != std::string::npos);
+
+    // Remote non-loopback endpoint should not inject llama-server cache_prompt flag
+    Preset remote_ty = ty_preset;
+    remote_ty.endpoint = "https://api.example.com/v1/chat/completions";
+    remote_ty.api_key = "sk-test";
+    auto r_remote = translateSingleUnit(remote_ty, "zh", "地铁站", "", 4000, cancel,
+                                        hymt_mock, {});
+    assert(r_remote.ok);
+    assert(seen.back().body.find("\"cache_prompt\"") == std::string::npos);
 }
 
 void testMultilangAndDictFormats() {
@@ -1496,6 +1515,94 @@ void testMultilangAndDictFormats() {
     fs::remove_all(tmp_dir);
 }
 
+void testEngineLifecycleAndSanitizeFastPath() {
+    // 1. Lazy worker spawn & automatic idle exit + transparent respawn
+    std::atomic<int> req_count{0};
+    HttpTransport fast_mock = [&](const HttpRequest &, const std::atomic<bool> &,
+                                  HttpStreamChunkCallback) -> HttpResponse {
+        const int n = ++req_count;
+        return {.status_code = 200,
+                .body = n == 1
+                            ? R"({"choices":[{"message":{"content":"First output"}}]})"
+                            : R"({"choices":[{"message":{"content":"<think>scratch</think>Second output<｜hy_place▁holder▁no▁1｜>"}}]})"};
+    };
+
+    AsyncTranslationEngine engine(fast_mock, 64, 35);
+    assert(!engine.isWorkerRunning());
+
+    // Offline preset misses must not spin up a background worker thread
+    bool off_called = false;
+    engine.submit(
+        TranslationJob{
+            .revision = 1,
+            .source_text = "unmatched_token_xyz",
+            .source_lang = "en",
+            .preset = Preset{.id = "off", .provider = ProviderKind::Offline, .target_lang = "zh"},
+            .immediate = true,
+            .offline_fallback = false,
+            .bypass_cache = true,
+            .debounce_ms = 0,
+            .timeout_ms = 1000,
+        },
+        [&](uint64_t, TranslationResult res) {
+            off_called = res.is_final;
+        });
+    assert(off_called);
+    assert(!engine.isWorkerRunning());
+
+    auto run_async_job = [&](uint64_t rev, const std::string &src) -> TranslationResult {
+        std::mutex m;
+        std::condition_variable cv;
+        bool done = false;
+        TranslationResult out;
+        engine.submit(
+            TranslationJob{
+                .revision = rev,
+                .source_text = src,
+                .source_lang = "zh",
+                .preset = Preset{
+                    .id = "mock_ai",
+                    .provider = ProviderKind::OpenAICompatible,
+                    .endpoint = "http://127.0.0.1:18081/v1/chat/completions",
+                    .model = "hy-mt1.5-1.8b-2bit",
+                    .target_lang = "en",
+                },
+                .immediate = true,
+                .offline_fallback = false,
+                .bypass_cache = true,
+                .debounce_ms = 0,
+                .timeout_ms = 2000,
+            },
+            [&](uint64_t r, TranslationResult res) {
+                if (r != rev || !res.is_final) {
+                    return;
+                }
+                std::lock_guard<std::mutex> lk(m);
+                out = std::move(res);
+                done = true;
+                cv.notify_all();
+            });
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait_for(lk, std::chrono::seconds(2), [&] { return done; });
+        assert(done);
+        return out;
+    };
+
+    const TranslationResult r1 = run_async_job(2, "第一句测试");
+    assert(r1.ok && r1.translated_text == "First output");
+
+    // Wait for worker idle exit (~35ms)
+    for (int i = 0; i < 40 && engine.isWorkerRunning(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    }
+    assert(!engine.isWorkerRunning());
+
+    // Subsequent submission respawns the worker cleanly and strips think/HY-MT tokens
+    const TranslationResult r2 = run_async_job(3, "第二句测试");
+    assert(r2.ok && r2.translated_text == "Second output");
+    assert(!hyMtActivityStampPath().empty());
+}
+
 int main() {
     testUtf8Helpers();
     testConfigTomlAndSecrets();
@@ -1508,6 +1615,7 @@ int main() {
     testOfflineDictionaryExperience();
     testHyMtPromptAndConfig();
     testMultilangAndDictFormats();
+    testEngineLifecycleAndSanitizeFastPath();
     std::cout << "ALL shadowbar_core tests PASSED.\n";
     return 0;
 }

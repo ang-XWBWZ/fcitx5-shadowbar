@@ -7,14 +7,59 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <mutex>
 #include <sstream>
 
 namespace shadowbar {
 
+std::string hyMtActivityStampPath() {
+    const char *xdg = std::getenv("XDG_RUNTIME_DIR");
+    if (!xdg || !*xdg) {
+        return {};
+    }
+    const std::filesystem::path dir =
+        std::filesystem::path(xdg) / "shadowbar";
+    return (dir / "hymt_activity").string();
+}
+
 namespace {
+
+void touchLocalHyMtActivity() {
+    static std::atomic<long long> s_last_touch_ms{0};
+    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+    long long prev = s_last_touch_ms.load(std::memory_order_relaxed);
+    if (prev != 0 && (now_ms - prev) < 8000) {
+        return;
+    }
+    if (!s_last_touch_ms.compare_exchange_strong(prev, now_ms,
+                                                std::memory_order_relaxed)) {
+        return;
+    }
+    const std::string stamp = hyMtActivityStampPath();
+    if (stamp.empty()) {
+        return;
+    }
+    std::error_code ec;
+    const std::filesystem::path p(stamp);
+    std::filesystem::create_directories(p.parent_path(), ec);
+    if (std::filesystem::exists(p, ec)) {
+        std::filesystem::last_write_time(
+            p, std::filesystem::file_time_type::clock::now(), ec);
+    } else {
+        std::ofstream out(p, std::ios::trunc);
+        if (out.is_open()) {
+            out << now_ms;
+        }
+    }
+}
 
 std::once_flag g_curl_init_once;
 
@@ -428,6 +473,9 @@ std::string stripXmlBlockCaseInsensitive(std::string text,
                                          std::string_view open_tag,
                                          std::string_view close_tag,
                                          bool hide_unclosed_tail) {
+    if (text.size() < open_tag.size() || text.find('<') == std::string::npos) {
+        return text;
+    }
     while (true) {
         const std::string lower = asciiLower(text);
         const size_t start = lower.find(open_tag);
@@ -449,6 +497,9 @@ std::string stripXmlBlockCaseInsensitive(std::string text,
 }
 
 std::string stripKnownSpecialTokens(std::string text) {
+    if (text.find('<') == std::string::npos) {
+        return text;
+    }
     static constexpr std::string_view kSpecialTokens[] = {
         "<｜hy_place▁holder▁no▁2｜>",
         "<｜hy_place▁holder▁no▁1｜>",
@@ -469,14 +520,17 @@ std::string stripKnownSpecialTokens(std::string text) {
 
 std::string sanitizeTranslationOutput(std::string_view raw, bool is_partial) {
     std::string text(raw);
-    text = stripXmlBlockCaseInsensitive(std::move(text), "<think>", "</think>", true);
-    text = stripXmlBlockCaseInsensitive(std::move(text), "<thinking>", "</thinking>",
-                                        true);
-    text = stripXmlBlockCaseInsensitive(std::move(text), "<thought>", "</thought>",
-                                        true);
-    text = stripXmlBlockCaseInsensitive(std::move(text), "<reasoning>",
-                                        "</reasoning>", true);
-    text = stripKnownSpecialTokens(std::move(text));
+    if (raw.find('<') != std::string_view::npos) {
+        text = stripXmlBlockCaseInsensitive(std::move(text), "<think>", "</think>",
+                                            true);
+        text = stripXmlBlockCaseInsensitive(std::move(text), "<thinking>",
+                                            "</thinking>", true);
+        text = stripXmlBlockCaseInsensitive(std::move(text), "<thought>",
+                                            "</thought>", true);
+        text = stripXmlBlockCaseInsensitive(std::move(text), "<reasoning>",
+                                            "</reasoning>", true);
+        text = stripKnownSpecialTokens(std::move(text));
+    }
     if (is_partial) {
         text = trimIncompleteUtf8Suffix(text);
     }
@@ -682,11 +736,6 @@ std::string buildLlmUserPrompt(std::string_view source_lang,
     return out.str();
 }
 
-std::string cleanModelOutput(std::string_view raw) {
-    std::string stripped = stripReasoningTags(raw);
-    return utf8::trim(stripped);
-}
-
 TranslationResult translateGoogleFree(const Preset &preset,
                                       std::string_view source_lang,
                                       std::string_view text,
@@ -808,6 +857,21 @@ TranslationResult translateDeepL(const Preset &preset,
     }
 }
 
+struct InterceptState {
+    HttpRequest last_request;
+    HttpResponse last_response;
+    std::string captured_raw;
+    std::string inline_error;
+    bool saw_sse_data = false;
+    bool saw_content_delta = false;
+    bool emitted_partial_tokens = false;
+    uint64_t attempt_seq = 0;
+};
+
+int estimateHyMtMaxTokens(std::string_view text) {
+    return std::clamp<int>(static_cast<int>(text.size()) * 2 + 160, 192, 1792);
+}
+
 TranslationResult translateOpenAiOrOllama(
     const Preset &preset,
     std::string_view source_lang,
@@ -816,7 +880,8 @@ TranslationResult translateOpenAiOrOllama(
     int timeout_ms,
     const std::atomic<bool> &cancel_flag,
     const HttpTransport &transport,
-    const std::function<void(std::string_view partial_text)> &on_partial) {
+    const std::function<void(std::string_view partial_text)> &on_partial,
+    InterceptState *intercept = nullptr) {
     const bool is_ollama = (preset.provider == ProviderKind::Ollama);
     const std::string url = is_ollama ? normalizeOllamaEndpoint(preset.endpoint)
                                       : normalizeOpenAiEndpoint(preset.endpoint);
@@ -832,11 +897,16 @@ TranslationResult translateOpenAiOrOllama(
                                   ? (is_ollama ? "qwen2.5:3b" : "gpt-4o-mini")
                                   : preset.model;
     const bool is_hymt = isHyMtModelName(model);
+    const bool is_local_hymt = is_hymt && isLocalhostEndpoint(url);
+    if (is_local_hymt) {
+        touchLocalHyMtActivity();
+    }
 
     nlohmann::json payload;
     payload["model"] = model;
     payload["stream"] = true;
     if (is_hymt) {
+        const int max_tokens = estimateHyMtMaxTokens(text);
         nlohmann::json messages = nlohmann::json::array();
         const std::string trimmed_sys = utf8::trim(preset.system_prompt);
         if (!trimmed_sys.empty()) {
@@ -852,12 +922,17 @@ TranslationResult translateOpenAiOrOllama(
             payload["options"] = {{"temperature", 0.2},
                                   {"top_p", 0.6},
                                   {"top_k", 20},
-                                  {"repeat_penalty", 1.05}};
+                                  {"repeat_penalty", 1.05},
+                                  {"num_predict", max_tokens}};
         } else {
             payload["temperature"] = 0.2;
             payload["top_p"] = 0.6;
             payload["top_k"] = 20;
             payload["repeat_penalty"] = 1.05;
+            payload["max_tokens"] = max_tokens;
+            if (is_local_hymt) {
+                payload["cache_prompt"] = true;
+            }
         }
     } else {
         const std::string sys_prompt =
@@ -900,50 +975,55 @@ TranslationResult translateOpenAiOrOllama(
     req.body = payload.dump();
 
     std::string line_buf;
+    line_buf.reserve(4096);
     std::string accumulated;
+    accumulated.reserve(text.size() * 2 + 64);
     bool saw_stream_chunks = false;
+    uint64_t seen_attempt = intercept ? intercept->attempt_seq : 0;
 
     auto consume_line = [&](std::string_view raw_line) {
         std::string_view line = utf8::trimView(raw_line);
         if (line.empty()) {
             return;
         }
+        bool is_data_line = true;
         if (!is_ollama) {
-            if (line.rfind("data:", 0) != 0) {
-                return;
+            if (line.rfind("data:", 0) == 0) {
+                if (intercept) {
+                    intercept->saw_sse_data = true;
+                }
+                line = utf8::trimView(line.substr(5));
+                if (line == "[DONE]") {
+                    return;
+                }
+            } else {
+                is_data_line = false;
             }
-            line = utf8::trimView(line.substr(5));
-            if (line == "[DONE]") {
-                return;
-            }
+        }
+        if (line.empty() || line.front() != '{') {
+            return;
         }
         try {
             auto j = nlohmann::json::parse(line);
-            std::string delta;
-            if (is_ollama) {
-                if (j.contains("message") && j["message"].is_object() &&
-                    j["message"].contains("content") &&
-                    j["message"]["content"].is_string()) {
-                    delta = j["message"]["content"].get<std::string>();
-                }
-            } else if (j.contains("choices") && j["choices"].is_array() &&
-                       !j["choices"].empty()) {
-                const auto &ch = j["choices"][0];
-                if (ch.contains("delta") && ch["delta"].is_object() &&
-                    ch["delta"].contains("content") &&
-                    ch["delta"]["content"].is_string()) {
-                    delta = ch["delta"]["content"].get<std::string>();
-                } else if (ch.contains("message") && ch["message"].is_object() &&
-                           ch["message"].contains("content") &&
-                           ch["message"]["content"].is_string()) {
-                    delta = ch["message"]["content"].get<std::string>();
+            if (intercept && intercept->inline_error.empty()) {
+                std::string err = extractJsonErrorField(j);
+                if (!err.empty()) {
+                    intercept->inline_error = std::move(err);
                 }
             }
+            if (!is_data_line) {
+                return;
+            }
+            std::string delta = extractLlmContentFromJson(j);
             if (!delta.empty()) {
+                if (intercept) {
+                    intercept->saw_content_delta = true;
+                }
                 saw_stream_chunks = true;
                 accumulated += delta;
                 if (on_partial) {
-                    std::string cleaned = cleanModelOutput(accumulated);
+                    std::string cleaned =
+                        sanitizeTranslationOutput(accumulated, true);
                     if (!cleaned.empty()) {
                         on_partial(cleaned);
                     }
@@ -956,6 +1036,12 @@ TranslationResult translateOpenAiOrOllama(
 
     HttpResponse resp = transport(
         req, cancel_flag, [&](std::string_view chunk) {
+            if (intercept && seen_attempt != intercept->attempt_seq) {
+                seen_attempt = intercept->attempt_seq;
+                line_buf.clear();
+                accumulated.clear();
+                saw_stream_chunks = false;
+            }
             line_buf.append(chunk);
             size_t pos = 0;
             while (true) {
@@ -988,7 +1074,7 @@ TranslationResult translateOpenAiOrOllama(
     }
 
     if (saw_stream_chunks) {
-        std::string final_text = cleanModelOutput(accumulated);
+        std::string final_text = sanitizeTranslationOutput(accumulated, false);
         if (!final_text.empty()) {
             return {.ok = true, .is_final = true, .translated_text = std::move(final_text)};
         }
@@ -997,17 +1083,8 @@ TranslationResult translateOpenAiOrOllama(
     // Fallback: server responded with single JSON object rather than SSE/NDJSON.
     try {
         auto j = nlohmann::json::parse(resp.body);
-        std::string content;
-        if (is_ollama && j.contains("message") && j["message"].is_object()) {
-            content = j["message"].value("content", "");
-        } else if (j.contains("choices") && j["choices"].is_array() &&
-                   !j["choices"].empty()) {
-            const auto &ch = j["choices"][0];
-            if (ch.contains("message") && ch["message"].is_object()) {
-                content = ch["message"].value("content", "");
-            }
-        }
-        content = cleanModelOutput(content);
+        std::string content = extractLlmContentFromJson(j);
+        content = sanitizeTranslationOutput(content, false);
         if (!content.empty()) {
             return {.ok = true, .is_final = true, .translated_text = std::move(content)};
         }
@@ -1387,15 +1464,7 @@ TranslationResult translateSingleUnit(
     const auto overall_deadline =
         SteadyClock::now() + std::chrono::milliseconds(budget_ms);
 
-    struct InterceptState {
-        HttpRequest last_request;
-        HttpResponse last_response;
-        std::string captured_raw;
-        std::string inline_error;
-        bool saw_sse_data = false;
-        bool saw_content_delta = false;
-        bool emitted_partial_tokens = false;
-    } intercept;
+    InterceptState intercept;
 
     auto enrich_headers = [](HttpRequest &req) {
         bool has_accept = false;
@@ -1431,44 +1500,6 @@ TranslationResult translateSingleUnit(
         }
     };
 
-    auto inspect_json_line = [&](std::string_view payload,
-                                 std::string &normalized_out) -> bool {
-        const std::string_view trimmed = utf8::trimView(payload);
-        if (trimmed.empty() || trimmed == "[DONE]" || trimmed.front() != '{') {
-            return false;
-        }
-        try {
-            auto j = nlohmann::json::parse(trimmed);
-            if (intercept.inline_error.empty()) {
-                std::string err = extractJsonErrorField(j);
-                if (!err.empty()) {
-                    intercept.inline_error = std::move(err);
-                }
-            }
-            if (!intercept.saw_content_delta &&
-                !extractLlmContentFromJson(j).empty()) {
-                intercept.saw_content_delta = true;
-            }
-            // Flatten OpenAI content-part arrays delta.content=[{type:"text",text:"..."}]
-            // so downstream SSE parsers handle them identically to string deltas.
-            if (j.is_object() && j.contains("choices") &&
-                j["choices"].is_array() && !j["choices"].empty() &&
-                j["choices"][0].is_object()) {
-                auto &c0 = j["choices"][0];
-                if (c0.contains("delta") && c0["delta"].is_object() &&
-                    c0["delta"].contains("content") &&
-                    c0["delta"]["content"].is_array()) {
-                    c0["delta"]["content"] =
-                        extractTextFromContentField(c0["delta"]["content"]);
-                    normalized_out = j.dump();
-                    return true;
-                }
-            }
-        } catch (...) {
-        }
-        return false;
-    };
-
     HttpTransport retried_transport =
         [&](const HttpRequest &raw_req, const std::atomic<bool> &cancel,
             HttpStreamChunkCallback inner_on_chunk) -> HttpResponse {
@@ -1497,48 +1528,22 @@ TranslationResult translateSingleUnit(
                     std::min(req.timeout_ms, static_cast<int>(rem_ms));
             }
 
+            ++intercept.attempt_seq;
             intercept.captured_raw.clear();
             intercept.inline_error.clear();
             intercept.saw_sse_data = false;
             intercept.saw_content_delta = false;
-            std::string line_buf;
 
             HttpStreamChunkCallback spy_chunk;
             if (inner_on_chunk) {
                 spy_chunk = [&](std::string_view chunk) {
-                    if (intercept.captured_raw.size() < 65536) {
-                        intercept.captured_raw.append(chunk);
+                    if (!intercept.saw_sse_data &&
+                        intercept.captured_raw.size() < 65536) {
+                        const size_t avail = 65536 - intercept.captured_raw.size();
+                        intercept.captured_raw.append(
+                            chunk.substr(0, std::min(avail, chunk.size())));
                     }
-                    line_buf.append(chunk);
-                    size_t nl = std::string::npos;
-                    while ((nl = line_buf.find('\n')) != std::string::npos) {
-                        std::string line = line_buf.substr(0, nl);
-                        line_buf.erase(0, nl + 1);
-                        if (!line.empty() && line.back() == '\r') {
-                            line.pop_back();
-                        }
-                        if (line.rfind("data:", 0) == 0) {
-                            intercept.saw_sse_data = true;
-                            std::string normalized_json;
-                            if (inspect_json_line(
-                                    std::string_view(line).substr(5),
-                                    normalized_json)) {
-                                std::string rewritten =
-                                    "data: " + normalized_json + "\n";
-                                inner_on_chunk(rewritten);
-                                continue;
-                            }
-                        } else {
-                            std::string unused;
-                            inspect_json_line(line, unused);
-                        }
-                        inner_on_chunk(line + "\n");
-                    }
-                    if (!line_buf.empty() && !intercept.saw_sse_data &&
-                        line_buf.find("data:") == std::string::npos) {
-                        std::string unused;
-                        inspect_json_line(line_buf, unused);
-                    }
+                    inner_on_chunk(chunk);
                 };
             }
 
@@ -1566,27 +1571,9 @@ TranslationResult translateSingleUnit(
                         slept += step;
                     }
                     if (!cancel.load(std::memory_order_relaxed)) {
-                        // Discard unterminated error/partial line before retry.
-                        line_buf.clear();
                         continue;
                     }
                 }
-            }
-
-            if (!line_buf.empty() && inner_on_chunk) {
-                if (line_buf.rfind("data:", 0) == 0) {
-                    intercept.saw_sse_data = true;
-                    std::string normalized_json;
-                    if (inspect_json_line(std::string_view(line_buf).substr(5),
-                                          normalized_json)) {
-                        inner_on_chunk("data: " + normalized_json + "\n");
-                    } else {
-                        inner_on_chunk(line_buf);
-                    }
-                } else {
-                    inner_on_chunk(line_buf);
-                }
-                line_buf.clear();
             }
             break;
         }
@@ -1594,15 +1581,13 @@ TranslationResult translateSingleUnit(
         return final_resp;
     };
 
-    auto sanitized_on_partial = [&](std::string_view partial) {
-        if (!on_partial || cancel_flag.load(std::memory_order_relaxed)) {
+    auto notify_partial = [&](std::string_view cleaned_partial) {
+        if (!on_partial || cancel_flag.load(std::memory_order_relaxed) ||
+            cleaned_partial.empty()) {
             return;
         }
-        std::string cleaned = sanitizeTranslationOutput(partial, true);
-        if (!cleaned.empty()) {
-            intercept.emitted_partial_tokens = true;
-            on_partial(cleaned);
-        }
+        intercept.emitted_partial_tokens = true;
+        on_partial(cleaned_partial);
     };
 
     TranslationResult result;
@@ -1616,8 +1601,9 @@ TranslationResult translateSingleUnit(
         result = translateOpenAiOrOllama(
             effective, source_lang, text, readonly_context, budget_ms,
             cancel_flag, retried_transport,
-            on_partial ? std::function<void(std::string_view)>(sanitized_on_partial)
-                       : std::function<void(std::string_view)>{});
+            on_partial ? std::function<void(std::string_view)>(notify_partial)
+                       : std::function<void(std::string_view)>{},
+            &intercept);
         break;
     case ProviderKind::DeepL:
         result = translateDeepL(effective, source_lang, text, budget_ms,
@@ -1737,13 +1723,21 @@ TranslationResult translateSingleUnit(
 }
 
 AsyncTranslationEngine::AsyncTranslationEngine(HttpTransport transport,
-                                               size_t cache_capacity)
-    : transport_(std::move(transport)), cache_(cache_capacity) {
-    worker_ = std::thread([this]() { workerLoop(); });
+                                               size_t cache_capacity,
+                                               int worker_idle_timeout_ms)
+    : transport_(std::move(transport)),
+      cache_(cache_capacity),
+      worker_idle_timeout_ms_(std::max(0, worker_idle_timeout_ms)) {
+    // Lazy worker startup: avoid spawning an idle thread until an async job arrives.
 }
 
 AsyncTranslationEngine::~AsyncTranslationEngine() {
     shutdown();
+}
+
+bool AsyncTranslationEngine::isWorkerRunning() const {
+    std::lock_guard<std::mutex> lock(mu_);
+    return worker_running_;
 }
 
 void AsyncTranslationEngine::setCacheCapacity(size_t capacity) {
@@ -1778,6 +1772,7 @@ void AsyncTranslationEngine::cancelAll() {
 }
 
 void AsyncTranslationEngine::shutdown() {
+    std::thread to_join;
     {
         std::lock_guard<std::mutex> lock(mu_);
         if (stop_) {
@@ -1785,14 +1780,16 @@ void AsyncTranslationEngine::shutdown() {
         }
         stop_ = true;
         has_pending_ = false;
+        worker_running_ = false;
         ++latest_revision_;
         if (current_cancel_) {
             current_cancel_->store(true, std::memory_order_relaxed);
         }
+        to_join = std::move(worker_);
     }
     cv_.notify_all();
-    if (worker_.joinable()) {
-        worker_.join();
+    if (to_join.joinable()) {
+        to_join.join();
     }
 }
 
@@ -1844,8 +1841,12 @@ void AsyncTranslationEngine::submit(TranslationJob job, UpdateCallback on_update
         return;
     }
 
+    std::thread retired_worker;
     {
         std::lock_guard<std::mutex> lock(mu_);
+        if (stop_) {
+            return;
+        }
         latest_revision_ = job.revision;
         if (current_cancel_) {
             current_cancel_->store(true, std::memory_order_relaxed);
@@ -1858,6 +1859,16 @@ void AsyncTranslationEngine::submit(TranslationJob job, UpdateCallback on_update
             .execute_at = SteadyClock::now() + delay,
         };
         has_pending_ = true;
+        if (!worker_running_) {
+            if (worker_.joinable()) {
+                retired_worker = std::move(worker_);
+            }
+            worker_running_ = true;
+            worker_ = std::thread([this]() { workerLoop(); });
+        }
+    }
+    if (retired_worker.joinable()) {
+        retired_worker.join();
     }
     cv_.notify_all();
 }
@@ -1866,7 +1877,17 @@ void AsyncTranslationEngine::workerLoop() {
     std::unique_lock<std::mutex> lock(mu_);
     while (!stop_) {
         if (!has_pending_) {
-            cv_.wait(lock, [this]() { return stop_ || has_pending_; });
+            if (worker_idle_timeout_ms_ > 0) {
+                const bool woke = cv_.wait_for(
+                    lock, std::chrono::milliseconds(worker_idle_timeout_ms_),
+                    [this]() { return stop_ || has_pending_; });
+                if (!woke && !stop_ && !has_pending_) {
+                    worker_running_ = false;
+                    return;
+                }
+            } else {
+                cv_.wait(lock, [this]() { return stop_ || has_pending_; });
+            }
             continue;
         }
 
@@ -1901,6 +1922,7 @@ void AsyncTranslationEngine::workerLoop() {
 
         lock.lock();
     }
+    worker_running_ = false;
 }
 
 TranslationResult AsyncTranslationEngine::executeJob(
@@ -1941,10 +1963,23 @@ TranslationResult AsyncTranslationEngine::executeJob(
     };
 
     const std::string cache_scope = makeCacheScope(job.preset, job.source_lang);
+    SteadyTimePoint last_partial_emit{};
+    bool has_emitted_partial = false;
+    auto should_emit_partial_now = [&]() -> bool {
+        const auto now = SteadyClock::now();
+        if (!has_emitted_partial ||
+            (now - last_partial_emit) >= std::chrono::milliseconds(45)) {
+            has_emitted_partial = true;
+            last_partial_emit = now;
+            return true;
+        }
+        return false;
+    };
 
     if (!job.lock_on_punctuation) {
         auto on_partial = [&](std::string_view partial) {
-            if (cancel_flag->load(std::memory_order_relaxed) || !callback) {
+            if (cancel_flag->load(std::memory_order_relaxed) || !callback ||
+                !should_emit_partial_now()) {
                 return;
             }
             callback(job.revision, {.ok = true,
@@ -2031,7 +2066,8 @@ TranslationResult AsyncTranslationEngine::executeJob(
     }
 
     auto on_tail_partial = [&](std::string_view partial) {
-        if (cancel_flag->load(std::memory_order_relaxed) || !callback) {
+        if (cancel_flag->load(std::memory_order_relaxed) || !callback ||
+            !should_emit_partial_now()) {
             return;
         }
         callback(job.revision,

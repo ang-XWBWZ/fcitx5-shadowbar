@@ -158,7 +158,7 @@ shadowbar-float [--toggle|--show|--settings|--sync-orb|--reset|--quit]
 ## 7. 本地轻量模型：腾讯混元 HY-MT1.5-1.8B（1.25bit / 2bit）
 
 1. 在系统安装 `llama-server`（`llama.cpp`）或将其放到 `~/.local/share/shadowbar/bin/llama-server`。
-2. 打开 `shadowbar-float --settings` -> **`TY 模型 (1.25bit/2bit)`** 标签页。
+2. 打开 `shadowbar-float --settings` -> **`混元 HY-MT1.5 (1.25bit/2bit)`** 标签页。
 3. 选择 **1.25bit (`STQ1_0`，约 441 MB)** 或 **2bit (`Q2_0C`，约 573 MB)**（也支持自定义 `.gguf`），可按网络环境选择 `HuggingFace` 或 `HF-Mirror` 镜像下载并启动服务。
 4. 推理后端默认为 **`auto`**（优先尝试 Vulkan GPU 加速，无可用 GPU 时自动回退 CPU），也可手动指定 `vulkan` 或 `cpu`。
 
@@ -181,4 +181,4 @@ ShadowBar 会自动兼容扫描 `~/.local/share/shadowbar/` 下的默认词库�
 
 - **Wayland 下不触发后台剪贴板监听**：检查终端是否可执行 `wl-paste --version` 并确认 `watch_clipboard = true`。
 - **用户目录安装后 Fcitx5 配置里看不到 ShadowBar**：检查环境变量 `FCITX_ADDON_DIRS` 是否包含 `~/.local/lib/fcitx5`，并执行 `./scripts/restart_fcitx5.sh`。
-- **本地 TY 模型开启 Vulkan 失败**：将推理后端切回 `auto`（自动回退 CPU）或用 `vulkaninfo` 检查显卡驱动与 Vulkan ICD。
+- **本地混元 HY-MT1.5 开启 Vulkan 失败**：将推理后端切回 `auto`（自动回退 CPU）或用 `vulkaninfo` 检查显卡驱动与 Vulkan ICD。

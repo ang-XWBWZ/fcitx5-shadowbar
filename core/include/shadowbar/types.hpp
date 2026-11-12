@@ -123,6 +123,7 @@ struct ShadowConfig {
     std::string hymt_backend = "auto"; // "auto" (Vulkan preferred, CPU fallback), "vulkan", or "cpu"
     int hymt_port = 18081;
     int hymt_threads = 0; // 0 = auto CPU threads
+    int hymt_idle_unload_sec = 300; // Auto-unload idle llama-server after N seconds (0 = never)
     std::string hymt_mirror = "huggingface"; // "huggingface" or "hf-mirror"
     std::string hymt_server_path;
     std::string hymt_model_125bit_path;
