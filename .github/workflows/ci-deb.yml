@@ -94,7 +94,7 @@ jobs:
             ca-certificates \
             git \
             cmake \
-            g++ \
+            build-essential \
             pkgconf \
             binutils \
             libvulkan-dev \

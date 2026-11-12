@@ -66,10 +66,10 @@ if [[ "${PREBUILT_FALLBACK}" == "1" && "$(uname -m)" == "x86_64" ]] && command -
     echo "[prebuilt] Prebuilt download unavailable; falling back to source build..."
 fi
 
-for cmd in git cmake c++; do
+for cmd in git cmake c++ make; do
     if ! command -v "${cmd}" >/dev/null 2>&1; then
         echo "Error: missing required build tool '${cmd}'." >&2
-        echo "Install build dependencies (Debian/Ubuntu): sudo apt install -y git cmake g++ libvulkan-dev glslc glslang-tools" >&2
+        echo "Install build dependencies (Debian/Ubuntu): sudo apt install -y git cmake build-essential libvulkan-dev glslc glslang-tools" >&2
         exit 1
     fi
 done
