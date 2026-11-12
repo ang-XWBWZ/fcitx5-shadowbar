@@ -16,15 +16,31 @@
 #include <mutex>
 #include <sstream>
 
+#include <unistd.h>
+
 namespace shadowbar {
 
 std::string hyMtActivityStampPath() {
-    const char *xdg = std::getenv("XDG_RUNTIME_DIR");
-    if (!xdg || !*xdg) {
-        return {};
+    auto non_empty_env = [](const char *name) -> std::string {
+        const char *val = std::getenv(name);
+        return (val && *val) ? std::string(val) : std::string();
+    };
+
+    std::filesystem::path dir;
+    if (const std::string xdg_rt = non_empty_env("XDG_RUNTIME_DIR"); !xdg_rt.empty()) {
+        dir = std::filesystem::path(xdg_rt) / "shadowbar";
+    } else if (const std::string xdg_cache = non_empty_env("XDG_CACHE_HOME"); !xdg_cache.empty()) {
+        dir = std::filesystem::path(xdg_cache) / "shadowbar";
+    } else if (const std::string home = non_empty_env("HOME"); !home.empty()) {
+        dir = std::filesystem::path(home) / ".cache" / "shadowbar";
+    } else {
+        std::error_code ec;
+        std::filesystem::path tmp = std::filesystem::temp_directory_path(ec);
+        if (ec || tmp.empty()) {
+            tmp = "/tmp";
+        }
+        dir = tmp / ("shadowbar-" + std::to_string(static_cast<unsigned long>(::getuid())));
     }
-    const std::filesystem::path dir =
-        std::filesystem::path(xdg) / "shadowbar";
     return (dir / "hymt_activity").string();
 }
 
