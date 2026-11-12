@@ -1,13 +1,14 @@
 # fcitx5-shadowbar
 
 [![CI Build & Deb](https://github.com/ang-XWBWZ/fcitx5-shadowbar/actions/workflows/ci-deb.yml/badge.svg)](https://github.com/ang-XWBWZ/fcitx5-shadowbar/actions/workflows/ci-deb.yml)
+[![Latest Release](https://img.shields.io/github/v/release/ang-XWBWZ/fcitx5-shadowbar?label=Release)](https://github.com/ang-XWBWZ/fcitx5-shadowbar/releases/latest)
 [![Code License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/Code%20License-PolyForm--Noncommercial--1.0.0-orange.svg)](LICENSES/PolyForm-Noncommercial-1.0.0.txt)
 [![Docs License: CC BY-NC-SA 4.0](https://img.shields.io/badge/Docs%20License-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSES/CC-BY-NC-SA-4.0.txt)
 
 **Language:** English | [简体中文](README.zh-CN.md)
 
 **A dual-mode real-time translator for Linux (Wayland / X11): Fcitx5 Inline Companion Translation + Smart Qt6 Floating Translation Popup (`shadowbar-float`).**  
-Translate seamlessly while typing inside any Chinese/CJK input method, or pop up an instant clipboard/on-demand translator window anywhere — powered by **20 languages**, **cloud/local LLMs**, local **Hunyuan `HY-MT1.5` (`1.25bit` / `2bit`)**, and **multi-format millisecond offline dictionaries**.
+Translate seamlessly while typing inside any Chinese/CJK input method, or pop up an instant clipboard/on-demand translator window anywhere — powered by **20 languages**, **cloud/local LLMs**, local **Hunyuan `Hy-MT2-1.8B` (`2bit` Q2_0C)**, and **multi-format millisecond offline dictionaries**.
 
 > **Non-Commercial Open Source:** Source code & scripts are licensed under [PolyForm Noncommercial License 1.0.0](LICENSES/PolyForm-Noncommercial-1.0.0.txt); documentation & example configs are licensed under [CC BY-NC-SA 4.0](LICENSES/CC-BY-NC-SA-4.0.txt). See [LICENSE](LICENSE).
 
@@ -69,8 +70,10 @@ ShadowBar routes across cloud APIs, local quantized LLMs, and zero-latency offli
 | --- | --- | --- |
 | **Cloud LLMs & APIs** | OpenAI-compatible (DeepSeek, GPT, custom endpoints), DeepL, Ollama | Custom system prompts (`Direct`, `Natural`, `Work`, etc.), async debouncing & cancel-on-type |
 | **Zero-Config Online** | Google Free | Instant setup with no API key required across all 20 languages |
-| **Local Offline AI** | **Hunyuan `HY-MT1.5-1.8B`** (`1.25bit` ~441 MB / `2bit` ~573 MB / custom `.gguf`) | Built-in `HuggingFace` / `HF-Mirror` downloader, single-slot KV tuned `llama-server` (`auto`: Vulkan GPU first, CPU fallback), **idle auto-unload** & on-demand wake |
+| **Local Offline AI** | **Hunyuan `Hy-MT2-1.8B`** (`2bit` Q2_0C ~573 MB / custom `.gguf`) | Built-in `HuggingFace` / `HF-Mirror` downloader, one-click prebuilt engine download & reproducible [`scripts/build_llama_server.sh`](scripts/build_llama_server.sh) for `llama-server` (`auto`: Vulkan GPU first, CPU fallback), **idle auto-unload** & on-demand wake |
 | **Millisecond Offline Dicts** | ECDICT (`.db`/`.sqlite`/`.csv`), StarDict (`.ifo`/`.idx`/`.dict.dz`), CC-CEDICT (`.u8`), JSON/JSONL, TSV | Instant offline lookups & fallback; mount multiple language-pair dicts simultaneously via Settings or `[dicts.<id>]` |
+
+> **Local `llama-server` Engine Details:** `Hy-MT2-1.8B-2Bit.gguf` uses `Q2_0C` + `hunyuan-dense` (`sjl623/llama.cpp` PR #22836, pinned commit `1e411d8`). To keep git history and the main `.deb` (`< 1 MB`) clean, `llama-server` is shipped separately via CI artifact [`shadowbar-llama-server-linux-amd64.tar.gz`](.github/workflows/ci-deb.yml) (one-click **`⬇ 下载引擎`** inside Settings -> `~/.local/share/shadowbar/bin/llama-server`) or built locally with [`scripts/build_llama_server.sh`](scripts/build_llama_server.sh) (Vulkan GPU + CPU fallback; host benchmark on Ryzen AI 9 H 365 / Radeon 880M: **~0.40s/sentence** Vulkan, **~0.52s/sentence** CPU).
 
 **20 Canonical Languages Supported (+ `auto` detection):** `en`, `zh`, `zh-TW`, `ja`, `ko`, `fr`, `de`, `es`, `pt`, `ru`, `it`, `ar`, `th`, `vi`, `id`, `hi`, `nl`, `pl`, `tr`, `uk`.
 
@@ -91,6 +94,8 @@ ShadowBar routes across cloud APIs, local quantized LLMs, and zero-latency offli
 
 ## 🚀 Quick Start
 
+> Prebuilt `.deb` packages (Ubuntu 24.04 / Debian 12 & 13) and the companion `shadowbar-llama-server-linux-amd64.tar.gz` runtime are available on **[GitHub Releases](https://github.com/ang-XWBWZ/fcitx5-shadowbar/releases/latest)**. To build & install from source:
+
 ```bash
 git clone https://github.com/ang-XWBWZ/fcitx5-shadowbar.git
 cd fcitx5-shadowbar
@@ -101,14 +106,16 @@ ctest --test-dir build --output-on-failure -V
 
 # Install into ~/.local (no root required)
 ./scripts/install_user.sh
+# Or install ShadowBar + the patched Q2_0C/Vulkan llama-server engine in one step:
+# ./scripts/install_user.sh --with-llama-server
 
-# Launch settings & popup (API presets, Hunyuan HY-MT1.5 local model, dicts & one-click Chinese env fixer)
+# Launch settings & popup (API presets, Hunyuan Hy-MT2-1.8B local model, dicts & one-click Chinese env fixer)
 shadowbar-float --settings
 ```
 
 > **Fresh Host Setup Tip:** Tab 4 (**`中文环境修复` / Chinese Environment Fixer**) inside `shadowbar-float --settings` automatically checks and repairs Fcitx5 packages, CJK monospace font fallback, `~/.config/fcitx5/profile`, and Wayland/X11 IME environment variables on Arch, Debian/Ubuntu, Fedora/RHEL, and openSUSE.
 
-See **[docs/INSTALL.md](docs/INSTALL.md)** ([中文安装指南](docs/INSTALL.zh-CN.md)) for full distro packages, `.deb` builds, Wayland/X11 setup, local Hunyuan HY-MT1.5 GGUF runtime, and external dictionary mounting. You can also test translation routing immediately in terminal via `./build/cli-sim/shadowbar-sim`.
+See **[docs/INSTALL.md](docs/INSTALL.md)** ([中文安装指南](docs/INSTALL.zh-CN.md)) for full distro packages, `.deb` builds, local Hunyuan `Hy-MT2-1.8B` / `llama-server` setup, and external dictionary mounting. You can also test translation routing immediately in terminal via `./build/cli-sim/shadowbar-sim`.
 
 ---
 
@@ -117,11 +124,11 @@ See **[docs/INSTALL.md](docs/INSTALL.md)** ([中文安装指南](docs/INSTALL.zh
 | Path | Purpose | License |
 | --- | --- | --- |
 | `core/` | C++20 translation pipeline, session state machine, 20-language registry, TOML hot-reload config, sentence splitter & offline dictionary engine | `PolyForm-Noncommercial-1.0.0` |
-| `floating-ui/` | `shadowbar-float` Qt6 popup window, desktop orb, Wayland/X11 clipboard monitor, Hunyuan HY-MT1.5 model manager & Chinese env fixer | `PolyForm-Noncommercial-1.0.0` |
+| `floating-ui/` | `shadowbar-float` Qt6 popup window, desktop orb, Wayland/X11 clipboard monitor, Hunyuan Hy-MT2 model manager & Chinese env fixer | `PolyForm-Noncommercial-1.0.0` |
 | `fcitx5-addon/` | `libshadowbar.so` companion addon & `libshadowbarim.so` virtual IM | `PolyForm-Noncommercial-1.0.0` |
 | `cli-sim/` | `shadowbar-sim` standalone CLI simulator | `PolyForm-Noncommercial-1.0.0` |
 | `tests/` | CTest suites (`test_core`, `test_fcitx5_integration`, `test_floating_ui_helpers`) | `PolyForm-Noncommercial-1.0.0` |
-| `scripts/` & `debian/` | Install/restart scripts and Debian `.deb` packaging files | `PolyForm-Noncommercial-1.0.0` |
+| `scripts/` & `debian/` | Install/restart/engine-build scripts (`build_llama_server.sh`) and Debian `.deb` packaging files | `PolyForm-Noncommercial-1.0.0` |
 | `docs/` & `config/config.toml.example` | Installation guides and commented configuration example (`~/.config/shadowbar/config.toml`) | `CC-BY-NC-SA-4.0` |
 | `LICENSES/` | Verbatim official texts of `PolyForm-Noncommercial-1.0.0` and `CC-BY-NC-SA-4.0` | — |
 

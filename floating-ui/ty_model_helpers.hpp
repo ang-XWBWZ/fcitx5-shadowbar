@@ -8,19 +8,19 @@
 
 namespace shadowbar::floating_ui {
 
-/// Static metadata for a Hunyuan HY-MT1.5 local GGUF variant.
+/// Static metadata for a Hunyuan Hy-MT2-1.8B local GGUF variant.
 struct TyModelSpec {
-    QString id;               // "1.25bit", "2bit", or "custom"
+    QString id;               // "2bit" or "custom"
     QString display_name;     // Human-readable title
     QString size_hint;        // Approximate GGUF size string
-    QString preset_id;        // Recommended preset id ("ty_125bit", "ty_2bit", "ty_custom")
+    QString preset_id;        // Recommended preset id ("ty_2bit" or "ty_custom")
     QString preset_label;     // Short label shown on pill selector
-    QString model_name;       // Logical model identifier (triggers HY-MT prompts)
+    QString model_name;       // Logical model identifier (triggers Hy-MT prompts)
     QString default_filename; // Standard GGUF file name
     QString repo_subpath;     // HuggingFace `<owner>/<repo>/resolve/main/<file>`
 };
 
-/// Normalizes variant string to `"1.25bit"`, `"2bit"`, or `"custom"`.
+/// Normalizes variant string to `"2bit"` (default, including legacy `"1.25bit"`) or `"custom"`.
 QString normalizeTyVariant(const QString &variant);
 
 /// Normalizes inference backend preference to `"auto"`, `"vulkan"`, or `"cpu"`.
@@ -29,16 +29,25 @@ QString normalizeTyBackend(const QString &backend);
 /// Returns GPU offload layers (`99` for `"auto"`/`"vulkan"`, `0` for `"cpu"`).
 int tyBackendGpuLayers(const QString &backend);
 
-/// Returns static metadata for `"1.25bit"`, `"2bit"`, or `"custom"`.
+/// Returns static metadata for `"2bit"` or `"custom"`.
 TyModelSpec tyModelSpec(const QString &variant);
 
-/// Builds download URL on either `"huggingface"` or `"hf-mirror"`.
+/// Builds model download URL on either `"huggingface"` or `"hf-mirror"`.
 QString tyDownloadUrl(const QString &variant, const QString &mirror);
+
+/// Returns the prebuilt `shadowbar-llama-server` release archive URL (`x86_64`).
+QString tyEngineDownloadUrl(const QString &mirror);
+
+/// Returns human-readable summary of the pinned `llama-server` engine requirements.
+QString tyEngineRequirementSummary();
 
 /// Resolves `~/.local/share/shadowbar` (honoring `$XDG_DATA_HOME`).
 QString defaultShadowbarShareDir();
 
-/// Resolves default `.gguf` file path for `"1.25bit"` or `"2bit"`.
+/// Resolves default managed `llama-server` install destination (`~/.local/share/shadowbar/bin/llama-server`).
+QString defaultTyServerInstallPath();
+
+/// Resolves default `.gguf` file path for `"2bit"`.
 QString defaultTyModelPath(const QString &variant);
 
 /// Resolves effective model file path from config or default share directory.
@@ -86,13 +95,14 @@ void upsertTyPreset(ShadowConfig &cfg,
                     bool set_active,
                     const QString &target_lang = QStringLiteral("en"));
 
-/// Returns `"1.25bit"`, `"2bit"`, or `"custom"` if `preset` targets the local TY server; else empty.
+/// Returns `"2bit"` or `"custom"` if `preset` targets the local TY server; else empty.
 QString inferTyVariantForPreset(const Preset &preset, int port);
 
-/// Parsed Vulkan/offload diagnostics extracted from one `llama-server` log line.
+/// Parsed Vulkan/offload/format diagnostics extracted from one `llama-server` log line.
 struct TyServerLogSignal {
     bool vulkan_device_found = false;
     bool no_vulkan_device = false;
+    bool unsupported_model_format = false;
     bool has_layer_offload = false;
     int offloaded_layers = 0;
     int total_layers = 0;

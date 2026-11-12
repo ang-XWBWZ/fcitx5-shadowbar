@@ -134,13 +134,13 @@ private:
     std::thread worker_;
 };
 
-/// Returns the per-user runtime path used to coordinate local HY-MT1.5 activity across processes.
+/// Returns the per-user runtime path used to coordinate local Hy-MT activity across processes.
 std::string hyMtActivityStampPath();
 
-/// Returns true when `model_name` identifies Tencent Hunyuan HY-MT / TY models.
+/// Returns true when `model_name` identifies Tencent Hunyuan HY-MT / Hy-MT2 / TY models.
 bool isHyMtModelName(std::string_view model_name);
 
-/// Builds the official single-turn user prompt expected by Hunyuan HY-MT1.5 models.
+/// Builds the official single-turn user prompt expected by Hunyuan Hy-MT2 / HY-MT1.5 models.
 std::string buildHyMtUserPrompt(std::string_view source_lang,
                                 std::string_view target_lang,
                                 std::string_view text,

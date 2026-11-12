@@ -38,6 +38,6 @@ Description: Dual-track real-time translation addon and Qt6 floating bar for Fci
  Features:
   * One-Shot (`;;`), Sticky (`Ctrl+Shift+T`), and Virtual IM modes
   * 20 languages with multi-provider routing (OpenAI-compatible, Ollama, DeepL, GoogleFree)
-  * Local Hunyuan HY-MT1.5-1.8B (1.25bit / 2bit GGUF) management with Vulkan/CPU fallback
+  * Local Hunyuan Hy-MT2-1.8B (2bit Q2_0C GGUF) management with Vulkan/CPU fallback
   * Multi-format offline dictionary support (ECDICT SQLite/CSV, StarDict, CC-CEDICT, JSON/JSONL, TSV)
   * Built-in one-click Chinese environment & IME fixer for Wayland and X11

@@ -195,7 +195,7 @@ void SettingsView::buildUi() {
     tabs_ = new QTabWidget(this);
     tabs_->addTab(buildPresetsTab(), "API 与译文预设");
     tabs_->addTab(buildGeneralTab(), "输入法、快捷键与悬浮窗");
-    tabs_->addTab(buildTyModelTab(), "混元 HY-MT1.5 (1.25bit/2bit)");
+    tabs_->addTab(buildTyModelTab(), "混元 Hy-MT2 (2bit)");
     tabs_->addTab(buildZhEnvTab(), "中文环境修复");
     connect(tabs_, &QTabWidget::currentChanged, this, [this](int idx) {
         if (idx == 3 && zh_fixer_ && !zh_fixer_->isBusy()) {
@@ -326,8 +326,7 @@ QWidget *SettingsView::buildPresetsTab() {
         });
         ty_tpl_row->addWidget(b);
     };
-    add_ty_tpl_btn("混元 1.25bit", QStringLiteral("1.25bit"));
-    add_ty_tpl_btn("混元 2bit", QStringLiteral("2bit"));
+    add_ty_tpl_btn("混元 Hy-MT2 (2bit)", QStringLiteral("2bit"));
 
     auto *goto_ty_btn = new QPushButton("管理本地模型与服务 →", form_host);
     goto_ty_btn->setObjectName("ChipButton");
@@ -1595,7 +1594,11 @@ void SettingsView::setTyModelManager(TyModelManager *manager) {
     connect(ty_mgr_, &TyModelManager::downloadFinished, this,
             [this](const QString &variant, bool ok, const QString &msg) {
                 if (ty_download_btn_) {
-                    ty_download_btn_->setEnabled(true);
+                    ty_download_btn_->setEnabled(
+                        selectedTyVariant() != QLatin1String("custom"));
+                }
+                if (ty_download_engine_btn_) {
+                    ty_download_engine_btn_->setEnabled(true);
                 }
                 if (ty_cancel_dl_btn_) {
                     ty_cancel_dl_btn_->setEnabled(false);
@@ -1631,23 +1634,18 @@ QWidget *SettingsView::buildTyModelTab() {
 
     // 1. Variant selection & GGUF model files
     auto *model_group =
-        new QGroupBox("混元 HY-MT1.5-1.8B 本地量化模型 (1.25bit STQ1_0 / 2bit Q2_0C)", host);
+        new QGroupBox("混元 Hy-MT2-1.8B 本地量化模型 (2bit Q2_0C)", host);
     auto *m_lay = new QVBoxLayout(model_group);
     m_lay->setSpacing(6);
 
     auto *variant_group = new QButtonGroup(model_group);
-    ty_variant_125_ = new QRadioButton(
-        "1.25bit · STQ1_0 (约 441 MB，体积最小 / 内存更省 / 实测 ~60 tok/s)",
-        model_group);
     ty_variant_2_ = new QRadioButton(
-        "2bit · Q2_0C (约 573 MB，译文细节更稳 / 实测 ~65 tok/s · 推荐)",
+        "Hy-MT2-1.8B 2bit · Q2_0C (约 573 MB，Vulkan ~0.40s/句 / CPU ~0.52s/句 · 默认推荐)",
         model_group);
     ty_variant_custom_ = new QRadioButton("自定义本地 GGUF 模型路径", model_group);
-    variant_group->addButton(ty_variant_125_);
     variant_group->addButton(ty_variant_2_);
     variant_group->addButton(ty_variant_custom_);
     m_lay->addWidget(ty_variant_2_);
-    m_lay->addWidget(ty_variant_125_);
     m_lay->addWidget(ty_variant_custom_);
 
     ty_files_status_ = new QLabel(model_group);
@@ -1688,22 +1686,16 @@ QWidget *SettingsView::buildTyModelTab() {
     };
 
     m_form->addRow(
-        "1.25bit GGUF:",
-        make_browse_row(ty_model_125_edit_,
-                        defaultTyModelPath(QStringLiteral("1.25bit")),
-                        "选择 HY-MT1.5 1.25bit GGUF 模型",
-                        "GGUF Models (*.gguf);;All Files (*)"));
-    m_form->addRow(
         "2bit GGUF:",
         make_browse_row(ty_model_2_edit_,
                         defaultTyModelPath(QStringLiteral("2bit")),
-                        "选择 HY-MT1.5 2bit GGUF 模型",
+                        "选择 Hy-MT2-1.8B 2bit GGUF 模型",
                         "GGUF Models (*.gguf);;All Files (*)"));
     m_form->addRow(
         "自定义 GGUF:",
         make_browse_row(ty_model_custom_edit_,
                         "/path/to/custom-hy-mt.gguf",
-                        "选择自定义 HY-MT GGUF 模型",
+                        "选择自定义 GGUF 模型",
                         "GGUF Models (*.gguf);;All Files (*)"));
 
     auto *dl_row = new QHBoxLayout();
@@ -1712,7 +1704,7 @@ QWidget *SettingsView::buildTyModelTab() {
     ty_mirror_combo_->addItem("HuggingFace 官方", "huggingface");
     ty_mirror_combo_->addItem("HF-Mirror 国内镜像", "hf-mirror");
 
-    ty_download_btn_ = new QPushButton("⬇ 下载当前选中版本", model_group);
+    ty_download_btn_ = new QPushButton("⬇ 下载 Hy-MT2-1.8B 2bit 模型", model_group);
     ty_download_btn_->setObjectName("SecondaryButton");
     connect(ty_download_btn_, &QPushButton::clicked, this,
             &SettingsView::onTyDownloadClicked);
@@ -1747,13 +1739,29 @@ QWidget *SettingsView::buildTyModelTab() {
     auto *s_form = new QFormLayout();
     s_form->setSpacing(6);
     s_form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    s_form->addRow(
-        "llama-server:",
-        make_browse_row(
-            ty_server_path_edit_,
-            defaultShadowbarShareDir() + QStringLiteral("/bin/llama-server"),
-            "选择支持 STQ1_0 / Q2_0C 的 llama-server",
-            "All Files (*)"));
+    auto *server_row = make_browse_row(
+        ty_server_path_edit_,
+        defaultTyServerInstallPath(),
+        "选择支持 Q2_0C 的 llama-server",
+        "All Files (*)");
+    ty_download_engine_btn_ = new QPushButton("⬇ 下载引擎", svc_group);
+    ty_download_engine_btn_->setObjectName("SecondaryButton");
+    ty_download_engine_btn_->setToolTip(
+        "自动下载预编译且支持 Q2_0C + Vulkan 的 llama-server，或使用 scripts/build_llama_server.sh 本地编译");
+    connect(ty_download_engine_btn_, &QPushButton::clicked, this,
+            &SettingsView::onTyDownloadEngineClicked);
+    server_row->addWidget(ty_download_engine_btn_);
+    s_form->addRow("llama-server:", server_row);
+
+    auto *engine_info_label = new QLabel(
+        tyEngineRequirementSummary() +
+            QStringLiteral("\n默认安装至 ~/.local/share/shadowbar/bin/llama-server"
+                           "；点击右侧「⬇ 下载引擎」或运行仓库 scripts/build_llama_server.sh 即可安装"
+                           "（支持 SHADOWBAR_ENGINE_URL 自定义镜像）。"),
+        svc_group);
+    engine_info_label->setObjectName("SubtleStatus");
+    engine_info_label->setWordWrap(true);
+    s_form->addRow("引擎说明:", engine_info_label);
 
     auto *rt_row = new QHBoxLayout();
     rt_row->setSpacing(8);
@@ -1766,7 +1774,7 @@ QWidget *SettingsView::buildTyModelTab() {
     ty_threads_spin_->setSpecialValueText("自动");
     ty_threads_spin_->setSuffix(" 线程");
 
-    ty_auto_start_check_ = new QCheckBox("选用混元 HY-MT1.5 预设时自动启停对应版本", svc_group);
+    ty_auto_start_check_ = new QCheckBox("选用本地混元 Hy-MT2 预设时自动按需启停", svc_group);
     rt_row->addWidget(new QLabel("端口:", svc_group));
     rt_row->addWidget(ty_port_spin_);
     rt_row->addWidget(new QLabel("线程:", svc_group));
@@ -1844,7 +1852,7 @@ QWidget *SettingsView::buildTyModelTab() {
     col->addWidget(svc_group);
 
     // 3. Built-in instant trial sandbox
-    auto *trial_group = new QGroupBox("即时试译对比（自动按当前选择启动/切换 1.25bit 或 2bit）", host);
+    auto *trial_group = new QGroupBox("即时试译验证（自动启动本地 Hy-MT2-1.8B 或自定义模型）", host);
     auto *t_lay = new QVBoxLayout(trial_group);
     t_lay->setSpacing(6);
 
@@ -1905,7 +1913,7 @@ QWidget *SettingsView::buildTyModelTab() {
     ty_trial_output_->setPlaceholderText("流式译文输出与耗时将显示在这里...");
     t_lay->addWidget(ty_trial_output_);
 
-    ty_trial_status_ = new QLabel("提示: 可直接切换上方 1.25bit / 2bit 单选框后点“立即试译”对比效果与耗时", trial_group);
+    ty_trial_status_ = new QLabel("提示: 点击“立即试译”可测试当前选中的 Hy-MT2-1.8B 2bit 或自定义 GGUF 的效果与耗时", trial_group);
     ty_trial_status_->setObjectName("SubtleStatus");
     ty_trial_status_->setWordWrap(true);
     t_lay->addWidget(ty_trial_status_);
@@ -1913,7 +1921,7 @@ QWidget *SettingsView::buildTyModelTab() {
     col->addWidget(trial_group);
     col->addStretch(1);
 
-    for (QRadioButton *rb : {ty_variant_125_, ty_variant_2_, ty_variant_custom_}) {
+    for (QRadioButton *rb : {ty_variant_2_, ty_variant_custom_}) {
         connect(rb, &QRadioButton::toggled, this, [this](bool checked) {
             if (checked) {
                 refreshTyFileStatus();
@@ -1931,9 +1939,6 @@ QWidget *SettingsView::buildTyModelTab() {
 }
 
 QString SettingsView::selectedTyVariant() const {
-    if (ty_variant_125_ && ty_variant_125_->isChecked()) {
-        return QStringLiteral("1.25bit");
-    }
     if (ty_variant_custom_ && ty_variant_custom_->isChecked()) {
         return QStringLiteral("custom");
     }
@@ -1946,9 +1951,7 @@ void SettingsView::loadTyFields() {
     }
     const QString v =
         normalizeTyVariant(QString::fromStdString(working_config_.hymt_variant));
-    if (v == QLatin1String("1.25bit")) {
-        ty_variant_125_->setChecked(true);
-    } else if (v == QLatin1String("custom")) {
+    if (v == QLatin1String("custom")) {
         ty_variant_custom_->setChecked(true);
     } else {
         ty_variant_2_->setChecked(true);
@@ -1976,8 +1979,6 @@ void SettingsView::loadTyFields() {
 
     ty_server_path_edit_->setText(
         QString::fromStdString(working_config_.hymt_server_path));
-    ty_model_125_edit_->setText(
-        QString::fromStdString(working_config_.hymt_model_125bit_path));
     ty_model_2_edit_->setText(
         QString::fromStdString(working_config_.hymt_model_2bit_path));
     ty_model_custom_edit_->setText(
@@ -2004,8 +2005,6 @@ void SettingsView::collectTyFields(ShadowConfig &cfg) const {
         ty_mirror_combo_->currentData().toString().toStdString();
     cfg.hymt_auto_start = ty_auto_start_check_->isChecked();
     cfg.hymt_server_path = ty_server_path_edit_->text().trimmed().toStdString();
-    cfg.hymt_model_125bit_path =
-        ty_model_125_edit_->text().trimmed().toStdString();
     cfg.hymt_model_2bit_path = ty_model_2_edit_->text().trimmed().toStdString();
     cfg.hymt_custom_model_path =
         ty_model_custom_edit_->text().trimmed().toStdString();
@@ -2024,13 +2023,17 @@ void SettingsView::refreshTyFileStatus() {
     const ShadowConfig cfg = currentTyEffectiveConfig();
     auto fmt_model = [&](const char *label, const QString &variant) -> QString {
         const QString p = resolvedTyModelPath(cfg, variant);
+        if (p.isEmpty()) {
+            return QString("○ %1: 未设置").arg(label);
+        }
         const QFileInfo fi(p);
         if (fi.exists() && fi.size() > 1024 * 1024) {
-            return QString("✓ %1: %2 MB")
+            return QString("✓ %1: %2 MB (%3)")
                 .arg(label)
-                .arg(static_cast<double>(fi.size()) / (1024.0 * 1024.0), 0, 'f', 1);
+                .arg(static_cast<double>(fi.size()) / (1024.0 * 1024.0), 0, 'f', 1)
+                .arg(fi.fileName());
         }
-        return QString("○ %1: 未下载").arg(label);
+        return QString("○ %1: 未就绪").arg(label);
     };
 
     const QString bin = resolvedTyServerBinary(cfg);
@@ -2038,17 +2041,22 @@ void SettingsView::refreshTyFileStatus() {
     const QString bin_status =
         (bfi.exists() && bfi.isExecutable())
             ? QString("✓ llama-server: %1").arg(bin)
-            : QString("⚠ 未检测到 llama-server (%1)").arg(bin);
+            : QString("⚠ 未检测到 llama-server (%1，可点下方「⬇ 下载引擎」或 scripts/build_llama_server.sh)").arg(bin);
 
-    ty_files_status_->setText(
-        QString("%1  |  %2\n%3")
-            .arg(fmt_model("1.25bit", QStringLiteral("1.25bit")),
-                 fmt_model("2bit", QStringLiteral("2bit")), bin_status));
+    QString model_line = fmt_model("Hy-MT2-1.8B 2bit", QStringLiteral("2bit"));
+    if (selectedTyVariant() == QLatin1String("custom")) {
+        model_line += QString("  |  ") +
+                      fmt_model("自定义 GGUF", QStringLiteral("custom"));
+    }
+    ty_files_status_->setText(QString("%1\n%2").arg(model_line, bin_status));
 
+    const bool downloading = ty_mgr_ && ty_mgr_->isDownloading();
     if (ty_download_btn_) {
         ty_download_btn_->setEnabled(
-            selectedTyVariant() != QLatin1String("custom") &&
-            !(ty_mgr_ && ty_mgr_->isDownloading()));
+            selectedTyVariant() != QLatin1String("custom") && !downloading);
+    }
+    if (ty_download_engine_btn_) {
+        ty_download_engine_btn_->setEnabled(!downloading);
     }
 }
 
@@ -2082,9 +2090,40 @@ void SettingsView::onTyDownloadClicked() {
                                ty_mirror_combo_->currentData().toString(),
                                dest)) {
         ty_download_btn_->setEnabled(false);
+        if (ty_download_engine_btn_) {
+            ty_download_engine_btn_->setEnabled(false);
+        }
         ty_cancel_dl_btn_->setEnabled(true);
         ty_dl_progress_->setValue(0);
         ty_dl_progress_->setVisible(true);
+    }
+}
+
+void SettingsView::onTyDownloadEngineClicked() {
+    if (!ty_mgr_) {
+        return;
+    }
+    const QString custom_dest =
+        ty_server_path_edit_ ? ty_server_path_edit_->text().trimmed() : QString();
+    const QString dest =
+        custom_dest.isEmpty() ? defaultTyServerInstallPath() : custom_dest;
+    const QString mirror =
+        ty_mirror_combo_ ? ty_mirror_combo_->currentData().toString()
+                         : QStringLiteral("huggingface");
+    if (ty_mgr_->startEngineDownload(mirror, dest)) {
+        if (ty_download_btn_) {
+            ty_download_btn_->setEnabled(false);
+        }
+        if (ty_download_engine_btn_) {
+            ty_download_engine_btn_->setEnabled(false);
+        }
+        if (ty_cancel_dl_btn_) {
+            ty_cancel_dl_btn_->setEnabled(true);
+        }
+        if (ty_dl_progress_) {
+            ty_dl_progress_->setValue(0);
+            ty_dl_progress_->setVisible(true);
+        }
     }
 }
 

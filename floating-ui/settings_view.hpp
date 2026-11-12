@@ -72,6 +72,7 @@ private:
     void refreshTyFileStatus();
     void refreshTyServiceStatus();
     void onTyDownloadClicked();
+    void onTyDownloadEngineClicked();
     void onTyStartStopClicked(bool start);
     void onTyApplyPresetClicked(bool set_default);
     void onTyTrialTranslate();
@@ -171,16 +172,14 @@ private:
     QPushButton *zh_fix_btn_ = nullptr;
     QPlainTextEdit *zh_fix_log_edit_ = nullptr;
 
-    // Tab 3: Local Hunyuan HY-MT1.5 (1.25bit / 2bit)
+    // Tab 3: Local Hunyuan Hy-MT2-1.8B (2bit) & custom GGUF
     QPointer<TyModelManager> ty_mgr_;
-    QRadioButton *ty_variant_125_ = nullptr;
     QRadioButton *ty_variant_2_ = nullptr;
     QRadioButton *ty_variant_custom_ = nullptr;
     QLabel *ty_files_status_ = nullptr;
     QComboBox *ty_mirror_combo_ = nullptr;
     QComboBox *ty_backend_combo_ = nullptr;
     QLineEdit *ty_server_path_edit_ = nullptr;
-    QLineEdit *ty_model_125_edit_ = nullptr;
     QLineEdit *ty_model_2_edit_ = nullptr;
     QLineEdit *ty_model_custom_edit_ = nullptr;
     QSpinBox *ty_port_spin_ = nullptr;
@@ -189,6 +188,7 @@ private:
     int ty_loaded_idle_minutes_ = 5;
     QCheckBox *ty_auto_start_check_ = nullptr;
     QPushButton *ty_download_btn_ = nullptr;
+    QPushButton *ty_download_engine_btn_ = nullptr;
     QPushButton *ty_cancel_dl_btn_ = nullptr;
     QProgressBar *ty_dl_progress_ = nullptr;
     QLabel *ty_service_badge_ = nullptr;

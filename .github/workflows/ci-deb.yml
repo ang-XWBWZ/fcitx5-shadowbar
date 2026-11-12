@@ -79,3 +79,76 @@ jobs:
         with:
           name: fcitx5-shadowbar-${{ matrix.artifact_suffix }}
           path: dist/*.deb
+
+  build-llama-server:
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:bookworm
+
+    steps:
+      - name: Install build & Vulkan toolchain dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            git \
+            cmake \
+            g++ \
+            pkgconf \
+            binutils \
+            libvulkan-dev \
+            glslc \
+            glslang-tools
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build patched llama-server (Q2_0C + Vulkan)
+        env:
+          GGML_VULKAN: "ON"
+          GGML_NATIVE: "OFF"
+        run: |
+          mkdir -p dist
+          chmod +x scripts/build_llama_server.sh
+          ./scripts/build_llama_server.sh dist/llama-server
+          ldd dist/llama-server
+          tar -C dist -czf dist/shadowbar-llama-server-linux-amd64.tar.gz llama-server
+          (cd dist && sha256sum shadowbar-llama-server-linux-amd64.tar.gz > shadowbar-llama-server-linux-amd64.tar.gz.sha256)
+          ls -lh dist/
+
+      - name: Upload llama-server engine tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadowbar-llama-server-linux-amd64
+          path: |
+            dist/shadowbar-llama-server-linux-amd64.tar.gz
+            dist/shadowbar-llama-server-linux-amd64.tar.gz.sha256
+
+  release:
+    needs: [build-test-deb, build-llama-server]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish assets to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          ls -lh release-assets/
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" release-assets/* --clobber
+          else
+            gh release create "${TAG_NAME}" release-assets/* \
+              --title "${TAG_NAME}" \
+              --generate-notes
+          fi

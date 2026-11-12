@@ -50,7 +50,8 @@ int main(int argc, char **argv) {
 
     // TY model helper tests
     using namespace shadowbar::floating_ui;
-    assert(normalizeTyVariant("STQ1_0") == "1.25bit");
+    assert(normalizeTyVariant("STQ1_0") == "2bit");
+    assert(normalizeTyVariant("1.25bit") == "2bit");
     assert(normalizeTyVariant("2bit") == "2bit");
     assert(normalizeTyVariant("custom") == "custom");
     assert(normalizeTyVariant("unknown") == "2bit");
@@ -69,11 +70,18 @@ int main(int argc, char **argv) {
     assert(args_vk.contains("-lv"));
     assert(args_vk.contains("4"));
 
-    assert(tyDownloadUrl("1.25bit", "huggingface") ==
-           "https://huggingface.co/AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF/resolve/main/Hy-MT1.5-1.8B-1.25bit.gguf");
+    assert(tyDownloadUrl("2bit", "huggingface") ==
+           "https://huggingface.co/tencent/Hy-MT2-1.8B-2Bit-GGUF/resolve/main/Hy-MT2-1.8B-2Bit.gguf");
     assert(tyDownloadUrl("2bit", "hf-mirror") ==
-           "https://hf-mirror.com/AngelSlim/Hy-MT1.5-1.8B-2bit-GGUF/resolve/main/Hy-MT1.5-1.8B-2bit.gguf");
+           "https://hf-mirror.com/tencent/Hy-MT2-1.8B-2Bit-GGUF/resolve/main/Hy-MT2-1.8B-2Bit.gguf");
+    assert(tyDownloadUrl("1.25bit", "huggingface") ==
+           tyDownloadUrl("2bit", "huggingface"));
     assert(tyDownloadUrl("custom", "huggingface").isEmpty());
+    assert(!tyEngineDownloadUrl("huggingface").isEmpty());
+    assert(tyEngineDownloadUrl("huggingface").contains("shadowbar-llama-server-linux-amd64.tar.gz"));
+    assert(tyEngineRequirementSummary().contains("Q2_0C"));
+    assert(tyEngineRequirementSummary().contains("1e411d8"));
+    assert(defaultTyServerInstallPath().endsWith("/bin/llama-server"));
 
     const QStringList args_auto = buildTyServerArgs("/tmp/m.gguf", 18081, 0);
     assert(args_auto.contains("-m"));
@@ -106,25 +114,27 @@ int main(int argc, char **argv) {
 
     shadowbar::ShadowConfig cfg;
     cfg.hymt_port = 18085;
-    cfg.hymt_model_125bit_path = "/opt/models/custom125.gguf";
-    assert(resolvedTyModelPath(cfg, "1.25bit") == "/opt/models/custom125.gguf");
-    assert(resolvedTyModelPath(cfg, "2bit").endsWith("/Hy-MT1.5-1.8B-2bit.gguf"));
+    cfg.hymt_model_2bit_path = "/opt/models/custom2.gguf";
+    assert(resolvedTyModelPath(cfg, "2bit") == "/opt/models/custom2.gguf");
+    assert(resolvedTyModelPath(cfg, "1.25bit") == "/opt/models/custom2.gguf");
+    cfg.hymt_model_2bit_path.clear();
+    assert(resolvedTyModelPath(cfg, "2bit").endsWith("/Hy-MT2-1.8B-2Bit.gguf"));
 
-    assert(tyModelSpec("1.25bit").preset_label == "混元 HY-MT1.5 (1.25bit)");
-    assert(tyModelSpec("2bit").preset_label == "混元 HY-MT1.5 (2bit)");
-    assert(tyModelSpec("custom").preset_label == "混元 HY-MT1.5 (自定义)");
+    assert(tyModelSpec("2bit").preset_label == "混元 Hy-MT2 (2bit)");
+    assert(tyModelSpec("1.25bit").preset_label == "混元 Hy-MT2 (2bit)");
+    assert(tyModelSpec("custom").preset_label == "混元 Hy-MT2 (自定义)");
 
-    upsertTyPreset(cfg, "1.25bit", true, "en");
-    assert(cfg.active_preset == "ty_125bit");
-    const shadowbar::Preset *p125 = cfg.findPreset("ty_125bit");
-    assert(p125 != nullptr);
-    assert(p125->endpoint == "http://127.0.0.1:18085/v1/chat/completions");
-    assert(p125->model == "hy-mt1.5-1.8b-1.25bit");
-    assert(p125->system_prompt.empty());
-    assert(inferTyVariantForPreset(*p125, 18085) == "1.25bit");
-    assert(inferTyVariantForPreset(*p125, 18081).isEmpty());
+    upsertTyPreset(cfg, "2bit", true, "en");
+    assert(cfg.active_preset == "ty_2bit");
+    const shadowbar::Preset *p2 = cfg.findPreset("ty_2bit");
+    assert(p2 != nullptr);
+    assert(p2->endpoint == "http://127.0.0.1:18085/v1/chat/completions");
+    assert(p2->model == "hy-mt2-1.8b-2bit");
+    assert(p2->system_prompt.empty());
+    assert(inferTyVariantForPreset(*p2, 18085) == "2bit");
+    assert(inferTyVariantForPreset(*p2, 18081).isEmpty());
 
-    shadowbar::Preset non_ty = *p125;
+    shadowbar::Preset non_ty = *p2;
     non_ty.model = "gpt-4o-mini";
     assert(inferTyVariantForPreset(non_ty, 18085).isEmpty());
 
@@ -155,6 +165,14 @@ int main(int argc, char **argv) {
     assert(sig_full.has_layer_offload);
     assert(sig_full.offloaded_layers == 33);
     assert(sig_full.total_layers == 33);
+
+    const TyServerLogSignal sig_arch = inspectTyServerLogLine(
+        "error loading model: unknown model architecture: 'hunyuan-dense'");
+    assert(sig_arch.unsupported_model_format);
+
+    const TyServerLogSignal sig_tensor = inspectTyServerLogLine(
+        "llama_model_load: error loading model: unknown tensor type 44");
+    assert(sig_tensor.unsupported_model_format);
 
     // Clipboard monitor avoidance tests
     assert(classifyAvoidedMimeTypes({}) == ClipboardAvoidReason::Empty);

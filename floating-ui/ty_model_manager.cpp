@@ -3,6 +3,7 @@
 #include "shadowbar/translator.hpp"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QMetaObject>
@@ -199,6 +200,7 @@ void TyModelManager::spawnServerProcess(int gpu_layers) {
     vulkan_device_seen_ = false;
     using_vulkan_ = false;
     no_vulkan_seen_ = false;
+    unsupported_format_seen_ = false;
     offloaded_layers_ = 0;
     total_layers_ = 0;
     ++probe_generation_;
@@ -243,6 +245,9 @@ void TyModelManager::spawnServerProcess(int gpu_layers) {
                 const TyServerLogSignal sig = inspectTyServerLogLine(l);
                 if (sig.vulkan_device_found) {
                     vulkan_device_seen_ = true;
+                }
+                if (sig.unsupported_model_format) {
+                    unsupported_format_seen_ = true;
                 }
                 if (sig.no_vulkan_device) {
                     no_vulkan_seen_ = true;
@@ -291,6 +296,15 @@ void TyModelManager::spawnServerProcess(int gpu_layers) {
                     server_proc_ = nullptr;
                 }
                 if (state_ == ServerState::Stopped) {
+                    return;
+                }
+                if (unsupported_format_seen_) {
+                    const QString msg = QStringLiteral(
+                        "当前 llama-server 不支持 Hy-MT2 的 Q2_0C / hunyuan-dense 格式"
+                        "（需 PR #22836 / commit 1e411d8），请点击「⬇ 下载引擎」"
+                        "或运行 scripts/build_llama_server.sh 编译专版引擎");
+                    appendLog(QStringLiteral("[ty] ") + msg);
+                    setState(ServerState::Error, msg);
                     return;
                 }
                 if (state_ == ServerState::Starting &&
@@ -688,9 +702,6 @@ void TyModelManager::unloadForIdle() {
 bool TyModelManager::startDownload(const QString &variant,
                                    const QString &mirror,
                                    const QString &dest_path) {
-    if (isDownloading()) {
-        return false;
-    }
     const QString norm_variant = normalizeTyVariant(variant);
     const QString url = tyDownloadUrl(norm_variant, mirror);
     if (url.isEmpty() || dest_path.trimmed().isEmpty()) {
@@ -698,23 +709,44 @@ bool TyModelManager::startDownload(const QString &variant,
                               QStringLiteral("该变体不支持内置在线下载"));
         return false;
     }
+    return startCurlDownload(norm_variant, url, dest_path, false);
+}
+
+bool TyModelManager::startEngineDownload(const QString &mirror,
+                                         const QString &dest_bin_path) {
+    const QString dest = dest_bin_path.trimmed().isEmpty()
+                             ? defaultTyServerInstallPath()
+                             : dest_bin_path.trimmed();
+    const QString url = tyEngineDownloadUrl(mirror);
+    return startCurlDownload(QStringLiteral("llama-server"), url, dest, true);
+}
+
+bool TyModelManager::startCurlDownload(const QString &tag,
+                                       const QString &url,
+                                       const QString &dest_path,
+                                       bool extract_engine_tar) {
+    if (isDownloading()) {
+        return false;
+    }
 
     const QString curl_bin =
         QStandardPaths::findExecutable(QStringLiteral("curl"));
     if (curl_bin.isEmpty()) {
-        emit downloadFinished(norm_variant, false,
-                              QStringLiteral("系统未找到 curl 命令"));
+        emit downloadFinished(tag, false, QStringLiteral("系统未找到 curl 命令"));
         return false;
     }
 
     const QFileInfo dest_info(dest_path.trimmed());
     QDir().mkpath(dest_info.absolutePath());
 
-    downloading_variant_ = norm_variant;
+    downloading_variant_ = tag;
     download_dest_path_ = dest_info.absoluteFilePath();
-    download_part_path_ = download_dest_path_ + QStringLiteral(".part");
+    download_part_path_ = download_dest_path_ +
+                          (extract_engine_tar ? QStringLiteral(".tar.gz.part")
+                                              : QStringLiteral(".part"));
     download_stderr_buf_.clear();
     download_cancelled_ = false;
+    download_is_tar_ = extract_engine_tar;
     QFile::remove(download_part_path_);
 
     download_proc_ = new QProcess(this);
@@ -755,7 +787,9 @@ bool TyModelManager::startDownload(const QString &variant,
                 }
 
                 const QString variant_done = downloading_variant_;
+                const bool is_tar = download_is_tar_;
                 downloading_variant_.clear();
+                download_is_tar_ = false;
 
                 if (download_cancelled_) {
                     QFile::remove(download_part_path_);
@@ -767,26 +801,89 @@ bool TyModelManager::startDownload(const QString &variant,
                     const QString err_tail =
                         QString::fromUtf8(download_stderr_buf_).trimmed();
                     QFile::remove(download_part_path_);
-                    emit downloadFinished(
-                        variant_done, false,
-                        QStringLiteral("下载失败 (curl %1): %2")
-                            .arg(exit_code)
-                            .arg(err_tail.right(180)));
-                    return;
-                }
-                if (QFile::exists(download_dest_path_)) {
-                    QFile::remove(download_dest_path_);
-                }
-                if (!QFile::rename(download_part_path_, download_dest_path_)) {
+                    const QString hint =
+                        is_tar
+                            ? QStringLiteral("下载引擎失败 (curl %1；若未联网或 GitHub 受阻，可运行 scripts/build_llama_server.sh 本地编译): %2")
+                            : QStringLiteral("下载失败 (curl %1): %2");
                     emit downloadFinished(variant_done, false,
-                                          QStringLiteral("保存模型文件失败"));
+                                          hint.arg(exit_code).arg(err_tail.right(180)));
                     return;
                 }
+
+                if (is_tar) {
+                    const QString unpack_dir =
+                        QFileInfo(download_dest_path_).absolutePath() +
+                        QStringLiteral("/.engine_unpack_tmp");
+                    QDir(unpack_dir).removeRecursively();
+                    QDir().mkpath(unpack_dir);
+
+                    QProcess tar;
+                    tar.start(QStringLiteral("tar"),
+                              {QStringLiteral("-xzf"), download_part_path_,
+                               QStringLiteral("-C"), unpack_dir});
+                    const bool tar_ok = tar.waitForFinished(30000) &&
+                                        tar.exitStatus() == QProcess::NormalExit &&
+                                        tar.exitCode() == 0;
+                    QFile::remove(download_part_path_);
+                    if (!tar_ok) {
+                        QDir(unpack_dir).removeRecursively();
+                        emit downloadFinished(
+                            variant_done, false,
+                            QStringLiteral("解压引擎压缩包失败"));
+                        return;
+                    }
+
+                    QString extracted_bin;
+                    QDirIterator it(unpack_dir,
+                                    {QStringLiteral("llama-server")},
+                                    QDir::Files,
+                                    QDirIterator::Subdirectories);
+                    if (it.hasNext()) {
+                        extracted_bin = it.next();
+                    }
+                    if (extracted_bin.isEmpty()) {
+                        QDir(unpack_dir).removeRecursively();
+                        emit downloadFinished(
+                            variant_done, false,
+                            QStringLiteral("压缩包内未找到 llama-server 可执行文件"));
+                        return;
+                    }
+                    if (QFile::exists(download_dest_path_)) {
+                        QFile::remove(download_dest_path_);
+                    }
+                    const bool moved =
+                        QFile::rename(extracted_bin, download_dest_path_) ||
+                        QFile::copy(extracted_bin, download_dest_path_);
+                    QDir(unpack_dir).removeRecursively();
+                    if (!moved) {
+                        emit downloadFinished(
+                            variant_done, false,
+                            QStringLiteral("安装 llama-server 到目标目录失败"));
+                        return;
+                    }
+                    QFile::setPermissions(
+                        download_dest_path_,
+                        QFileDevice::ReadOwner | QFileDevice::WriteOwner |
+                            QFileDevice::ExeOwner | QFileDevice::ReadGroup |
+                            QFileDevice::ExeGroup | QFileDevice::ReadOther |
+                            QFileDevice::ExeOther);
+                } else {
+                    if (QFile::exists(download_dest_path_)) {
+                        QFile::remove(download_dest_path_);
+                    }
+                    if (!QFile::rename(download_part_path_, download_dest_path_)) {
+                        emit downloadFinished(variant_done, false,
+                                              QStringLiteral("保存模型文件失败"));
+                        return;
+                    }
+                }
+
                 const QFileInfo fi(download_dest_path_);
-                emit downloadProgress(variant_done, 100, QStringLiteral("下载完成"));
+                emit downloadProgress(variant_done, 100, QStringLiteral("安装完成"));
                 emit downloadFinished(
                     variant_done, true,
-                    QStringLiteral("下载完成 (%1 MB)")
+                    QStringLiteral("%1完成 (%2 MB)")
+                        .arg(is_tar ? QStringLiteral("引擎安装") : QStringLiteral("下载"))
                         .arg(static_cast<double>(fi.size()) / (1024.0 * 1024.0),
                              0, 'f', 1));
             });

@@ -155,12 +155,20 @@ In `shadowbar-float --settings` (Tab 2) or `[floating]` in `config.toml`, enable
 
 ---
 
-## 7. Optional: Local Hunyuan HY-MT1.5-1.8B Model (`1.25bit` / `2bit`)
+## 7. Optional: Local Hunyuan Hy-MT2-1.8B Model (`2bit` Q2_0C)
 
-1. Install or build `llama-server` (`llama.cpp`) on your system or place it at `~/.local/share/shadowbar/bin/llama-server`.
-2. Open `shadowbar-float --settings` -> **Tab 3: `混元 HY-MT1.5 (1.25bit/2bit)`**.
-3. Choose **1.25bit (`STQ1_0`, ~441 MB)** or **2bit (`Q2_0C`, ~573 MB)** (or point to a custom `.gguf`), pick **HuggingFace** or **HF-Mirror**, download, and start the local server.
-4. Set backend to **`auto`** (Vulkan GPU preferred with automatic CPU fallback), **`vulkan`**, or **`cpu`**.
+Because `Hy-MT2-1.8B-2Bit.gguf` uses the non-standard `Q2_0C` quantization (`hunyuan-dense`, upstream `sjl623/llama.cpp` PR #22836 pinned at commit `1e411d8f5a1e23525fa3265dfb4bd76265465397`), stock distro `llama-server` builds may reject it (`unknown tensor type` / `unknown model architecture`). Choose either engine option:
+
+1. **Install during setup, one-click UI download, or build from source**:
+   - During installation, pass `--with-llama-server` to `./scripts/install_user.sh` (or `./scripts/install_system.sh`) to automatically fetch the prebuilt release archive (falling back to source compilation if unavailable); or
+   - In `shadowbar-float --settings` -> **Tab 3: `混元 Hy-MT2 (2bit)`**, click **`⬇ 下载引擎`** to fetch `shadowbar-llama-server-linux-amd64.tar.gz` into `~/.local/share/shadowbar/bin/llama-server` (you can override the archive URL via `SHADOWBAR_ENGINE_URL`); or
+   - Build locally from the pinned source commit (optional `sudo apt install -y libvulkan-dev glslc glslang-tools` for Vulkan GPU acceleration; `GGML_VULKAN=AUTO|ON|OFF` and `GGML_NATIVE=ON|OFF` are supported):
+     ```bash
+     ./scripts/build_llama_server.sh
+     ```
+2. Select **`Hy-MT2-1.8B 2bit · Q2_0C`** (~573 MB, or point to a custom `.gguf`), pick **HuggingFace** or **HF-Mirror**, download, and start the local server.
+3. Set backend to **`auto`** (Vulkan GPU preferred with automatic CPU fallback), **`vulkan`**, or **`cpu`**.
+4. Online providers (**Google Free**, **OpenAI / DeepSeek**, **DeepL**, **Ollama**) and offline dictionaries remain independent and always available.
 
 ---
 
@@ -181,4 +189,4 @@ Supported formats:
 
 - **Floating window does not respond to Wayland background copy**: Verify `wl-paste --version` works in terminal and `watch_clipboard = true` is enabled.
 - **Fcitx5 does not list ShadowBar after user-local install**: Check `FCITX_ADDON_DIRS` includes `~/.local/lib/fcitx5` and run `./scripts/restart_fcitx5.sh`.
-- **Vulkan GPU offload fails on local HY-MT1.5**: Switch backend to `auto` (falls back to CPU) or verify your Vulkan ICD drivers (`vulkaninfo`).
+- **Vulkan GPU offload fails on local Hy-MT2**: Switch backend to `auto` (falls back to CPU) or verify your Vulkan ICD drivers (`vulkaninfo`).

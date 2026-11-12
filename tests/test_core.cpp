@@ -1230,7 +1230,9 @@ void testOfflineDictionaryExperience() {
 } // namespace
 
 void testHyMtPromptAndConfig() {
-    // 1. Model detection & HY-MT1.5 prompt formatting
+    // 1. Model detection & HY-MT prompt formatting
+    assert(isHyMtModelName("hy-mt2-1.8b-2bit"));
+    assert(isHyMtModelName("Hy-MT2-1.8B-2Bit.gguf"));
     assert(isHyMtModelName("hy-mt1.5-1.8b-1.25bit"));
     assert(isHyMtModelName("Hy-MT1.5-1.8B-2bit.gguf"));
     assert(isHyMtModelName("ty_2bit"));
@@ -1255,16 +1257,15 @@ void testHyMtPromptAndConfig() {
         buildHyMtUserPrompt("zh", "en", "二等座也可以", "我想买高铁票");
     assert(with_ctx.find("参考上文（请勿输出）：我想买高铁票\n将以下文本翻译为英语") == 0);
 
-    // 2. [hymt] config roundtrip & validation
+    // 2. [hymt] config roundtrip, legacy variant migration & validation
     ShadowConfig cfg;
-    cfg.hymt_variant = "1.25bit";
+    cfg.hymt_variant = "2bit";
     cfg.hymt_backend = "vulkan";
     cfg.hymt_port = 18999;
     cfg.hymt_threads = 8;
     cfg.hymt_mirror = "hf-mirror";
     cfg.hymt_server_path = "/tmp/llama-server";
-    cfg.hymt_model_125bit_path = "/tmp/Hy-MT1.5-1.8B-1.25bit.gguf";
-    cfg.hymt_model_2bit_path = "/tmp/Hy-MT1.5-1.8B-2bit.gguf";
+    cfg.hymt_model_2bit_path = "/tmp/Hy-MT2-1.8B-2Bit.gguf";
     cfg.hymt_custom_model_path = "/tmp/custom.gguf";
     cfg.hymt_idle_unload_sec = 420;
     cfg.hymt_auto_start = false;
@@ -1273,17 +1274,20 @@ void testHyMtPromptAndConfig() {
     ShadowConfig parsed;
     std::string err;
     assert(ConfigManager::parseToml(dumped, parsed, &err));
-    assert(parsed.hymt_variant == "1.25bit");
+    assert(parsed.hymt_variant == "2bit");
     assert(parsed.hymt_backend == "vulkan");
     assert(parsed.hymt_port == 18999);
     assert(parsed.hymt_threads == 8);
     assert(parsed.hymt_mirror == "hf-mirror");
     assert(parsed.hymt_server_path == "/tmp/llama-server");
-    assert(parsed.hymt_model_125bit_path == "/tmp/Hy-MT1.5-1.8B-1.25bit.gguf");
-    assert(parsed.hymt_model_2bit_path == "/tmp/Hy-MT1.5-1.8B-2bit.gguf");
+    assert(parsed.hymt_model_2bit_path == "/tmp/Hy-MT2-1.8B-2Bit.gguf");
     assert(parsed.hymt_custom_model_path == "/tmp/custom.gguf");
     assert(parsed.hymt_idle_unload_sec == 420);
     assert(parsed.hymt_auto_start == false);
+
+    ShadowConfig legacy;
+    assert(ConfigManager::parseToml("[hymt]\nvariant = \"1.25bit\"\n", legacy, &err));
+    assert(legacy.hymt_variant == "2bit");
 
     ShadowConfig clamped;
     assert(ConfigManager::parseToml("[hymt]\nidle_unload_sec = -5\n", clamped, &err));

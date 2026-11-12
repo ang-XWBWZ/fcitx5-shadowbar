@@ -2,6 +2,20 @@
 
 All notable changes to **fcitx5-shadowbar** are documented in this file.
 
+## [0.1.3] - 2026-11-12
+
+### Highlights: Hunyuan `Hy-MT2-1.8B (2bit)` & Patched `llama-server` Packaging
+
+- **Built-In Local Model Upgrade (`Hy-MT2-1.8B 2bit`)**
+  - Replaced legacy `HY-MT1.5` (`1.25bit` / `2bit`) presets with **`Hy-MT2-1.8B (2bit Q2_0C)`** (`tencent/Hy-MT2-1.8B-2Bit-GGUF`, ~573 MB; benchmarked at ~0.40s/sentence on Radeon 880M Vulkan and ~0.52s/sentence on CPU), while preserving **custom local `.gguf`** paths, **all online LLM APIs** (OpenAI / DeepSeek / Ollama), **standard translation APIs** (DeepL / Google Free), and **offline dictionaries**.
+  - Existing user configurations with `variant = "1.25bit"` or legacy `hy-mt1.5` local preset names automatically migrate to `Hy-MT2-1.8B (2bit)` without manual re-setup.
+
+- **Non-Standard `llama-server` (`Q2_0C` + `hunyuan-dense`) Tooling & Release Distribution**
+  - Added reproducible [`scripts/build_llama_server.sh`](scripts/build_llama_server.sh) pinned to `sjl623/llama.cpp` commit `1e411d8f5a1e23525fa3265dfb4bd76265465397` (PR #22836) with automatic Vulkan GPU detection (`GGML_VULKAN=AUTO|ON|OFF`) and optional `--prebuilt` release archive fetch.
+  - Added **one-click `⬇ 下载引擎`** in `shadowbar-float --settings` (`TyModelManager::startEngineDownload`) plus `SHADOWBAR_ENGINE_URL` override and explicit error diagnostics when an older stock `llama-server` lacks `Q2_0C` / `hunyuan-dense`.
+  - Updated `scripts/install_user.sh` and `scripts/install_system.sh` with `--with-llama-server` / `--build-llama-server` flags and post-install engine detection guidance.
+  - Added CI `build-llama-server` (`debian:bookworm`, Vulkan + CPU) and automated `release` jobs in [`.github/workflows/ci-deb.yml`](.github/workflows/ci-deb.yml) to publish `shadowbar-llama-server-linux-amd64.tar.gz` alongside `.deb` packages on `v*` tags.
+
 ## [0.1.2] - 2026-11-12
 
 ### Bug Fixes

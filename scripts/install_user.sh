@@ -4,6 +4,36 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/build"
 
+INSTALL_LLAMA_MODE="none"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --with-llama-server)
+            INSTALL_LLAMA_MODE="prebuilt"
+            shift
+            ;;
+        --build-llama-server)
+            INSTALL_LLAMA_MODE="source"
+            shift
+            ;;
+        -h|--help)
+            cat <<EOF
+Usage: $0 [--with-llama-server | --build-llama-server]
+
+Options:
+  --with-llama-server   Also install the patched llama-server (Q2_0C + Vulkan) into
+                        ~/.local/share/shadowbar/bin/llama-server (downloads prebuilt
+                        release archive first, or builds from source on fallback).
+  --build-llama-server  Force compiling the patched llama-server from source.
+EOF
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1 (try --help)" >&2
+            exit 1
+            ;;
+    esac
+done
+
 cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}"
 cmake --build "${BUILD_DIR}" -j
 
@@ -58,6 +88,40 @@ echo "输入法项: ${IM_CONF_DEST}/shadowbar.conf (翻译输入 (ShadowBar))"
 echo "沙盒CLI:  ${BIN_DEST}/shadowbar-sim"
 echo "配置文件: ${CFG_DEST}/config.toml"
 echo "环境文件: ${ENV_FILE}"
+
+ENGINE_DEST="${XDG_DATA_HOME:-${HOME}/.local/share}/shadowbar/bin/llama-server"
+if [[ "${INSTALL_LLAMA_MODE}" == "prebuilt" ]]; then
+    echo
+    echo "[ShadowBar] 正在安装专版 llama-server (Q2_0C + hunyuan-dense + Vulkan)..."
+    "${ROOT_DIR}/scripts/build_llama_server.sh" --prebuilt "${ENGINE_DEST}"
+elif [[ "${INSTALL_LLAMA_MODE}" == "source" ]]; then
+    echo
+    echo "[ShadowBar] 正在从源码编译专版 llama-server (Q2_0C + hunyuan-dense + Vulkan)..."
+    "${ROOT_DIR}/scripts/build_llama_server.sh" "${ENGINE_DEST}"
+fi
+
+DETECTED_ENGINE=""
+if [[ -x "${ENGINE_DEST}" ]]; then
+    DETECTED_ENGINE="${ENGINE_DEST}"
+elif [[ -x "${BIN_DEST}/shadowbar-llama-server" ]]; then
+    DETECTED_ENGINE="${BIN_DEST}/shadowbar-llama-server"
+elif command -v shadowbar-llama-server >/dev/null 2>&1; then
+    DETECTED_ENGINE="$(command -v shadowbar-llama-server)"
+elif command -v llama-server >/dev/null 2>&1; then
+    DETECTED_ENGINE="$(command -v llama-server) (请确认支持 Q2_0C)"
+fi
+
+echo
+if [[ -n "${DETECTED_ENGINE}" ]]; then
+    echo "本地引擎: ✓ ${DETECTED_ENGINE} (用于 Hy-MT2-1.8B 2bit)"
+else
+    echo "本地引擎: ○ 尚未安装专版 llama-server (仅使用在线/词典模式可忽略)"
+    echo "  如需离线使用腾讯混元 Hy-MT2-1.8B (2bit / Q2_0C)，可通过任一方式安装："
+    echo "    · 一键安装 (下载预编译或自动编译): ${ROOT_DIR}/scripts/install_user.sh --with-llama-server"
+    echo "    · 仅编译安装引擎: ${ROOT_DIR}/scripts/build_llama_server.sh"
+    echo "    · 图形界面安装: shadowbar-float --settings -> 「混元 Hy-MT2 (2bit)」 -> 「⬇ 下载引擎」"
+fi
+
 echo
 echo "下一步激活方式："
 echo "  1. 立即安全重启并保持 Wayland 连接: ${ROOT_DIR}/scripts/restart_fcitx5.sh"

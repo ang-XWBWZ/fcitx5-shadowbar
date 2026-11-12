@@ -118,15 +118,15 @@ struct ShadowConfig {
     int floating_font_scale = 100;
     int floating_segment_chars = 500;
 
-    // Local Hunyuan HY-MT1.5 (1.25bit / 2bit) runtime preferences ([hymt])
-    std::string hymt_variant = "2bit"; // "1.25bit", "2bit", or "custom"
+    // Local Hunyuan Hy-MT2-1.8B (2bit / custom GGUF) runtime preferences ([hymt])
+    std::string hymt_variant = "2bit"; // "2bit" (Hy-MT2-1.8B) or "custom"
     std::string hymt_backend = "auto"; // "auto" (Vulkan preferred, CPU fallback), "vulkan", or "cpu"
     int hymt_port = 18081;
     int hymt_threads = 0; // 0 = auto CPU threads
     int hymt_idle_unload_sec = 300; // Auto-unload idle llama-server after N seconds (0 = never)
     std::string hymt_mirror = "huggingface"; // "huggingface" or "hf-mirror"
     std::string hymt_server_path;
-    std::string hymt_model_125bit_path;
+    std::string hymt_model_125bit_path; // Legacy unused config key retained for TOML compatibility
     std::string hymt_model_2bit_path;
     std::string hymt_custom_model_path;
     bool hymt_auto_start = true;

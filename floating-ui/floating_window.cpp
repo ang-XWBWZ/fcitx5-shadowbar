@@ -207,7 +207,7 @@ FloatingWindow::FloatingWindow(QWidget *parent)
                     waiting_ty_server_ = false;
                     if (status_label_) {
                         status_label_->setText(
-                            QString("⚠ 本地混元 HY-MT1.5 启动失败: %1").arg(msg));
+                            QString("⚠ 本地混元 Hy-MT2 启动失败: %1").arg(msg));
                     }
                 }
             });
@@ -1661,7 +1661,7 @@ void FloatingWindow::pumpNextSegmentTranslation(bool immediate) {
                 segment_queue_.push_front(seg_idx);
                 if (status_label_) {
                     status_label_->setText(
-                        QString("⏳ 正在加载本地混元 HY-MT1.5 (%1)…")
+                        QString("⏳ 正在加载本地混元 Hy-MT2 (%1)…")
                             .arg(ty_variant));
                 }
                 return;

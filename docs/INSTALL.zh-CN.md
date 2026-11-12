@@ -155,12 +155,20 @@ shadowbar-float [--toggle|--show|--settings|--sync-orb|--reset|--quit]
 
 ---
 
-## 7. 本地轻量模型：腾讯混元 HY-MT1.5-1.8B（1.25bit / 2bit）
+## 7. 本地轻量模型：腾讯混元 Hy-MT2-1.8B（`2bit` Q2_0C）
 
-1. 在系统安装 `llama-server`（`llama.cpp`）或将其放到 `~/.local/share/shadowbar/bin/llama-server`。
-2. 打开 `shadowbar-float --settings` -> **`混元 HY-MT1.5 (1.25bit/2bit)`** 标签页。
-3. 选择 **1.25bit (`STQ1_0`，约 441 MB)** 或 **2bit (`Q2_0C`，约 573 MB)**（也支持自定义 `.gguf`），可按网络环境选择 `HuggingFace` 或 `HF-Mirror` 镜像下载并启动服务。
-4. 推理后端默认为 **`auto`**（优先尝试 Vulkan GPU 加速，无可用 GPU 时自动回退 CPU），也可手动指定 `vulkan` 或 `cpu`。
+由于 `Hy-MT2-1.8B-2Bit.gguf` 使用非标准 `Q2_0C` 量化与 `hunyuan-dense` 架构（上游分支 `sjl623/llama.cpp` PR #22836，固定 commit `1e411d8f5a1e23525fa3265dfb4bd76265465397`），普通系统包仓库的 `llama.cpp` 可能报 `unknown tensor type` / `unknown model architecture` 而无法加载。推荐以下两种方式获取专版推理引擎：
+
+1. **安装时一步部署、界面一键下载或源码编译专版 `llama-server`**：
+   - 安装时直接追加 `--with-llama-server` 参数（`./scripts/install_user.sh --with-llama-server` 或 `./scripts/install_system.sh --with-llama-server`），会自动安装预编译引擎（不可达时自动回退源码编译）；或
+   - 打开 `shadowbar-float --settings` -> **`混元 Hy-MT2 (2bit)`** 标签页，直接点击 `llama-server` 行右侧的 **`⬇ 下载引擎`**，自动安装预编译版 `shadowbar-llama-server-linux-amd64.tar.gz` 到 `~/.local/share/shadowbar/bin/llama-server`（可用环境变量 `SHADOWBAR_ENGINE_URL` 指定自定义下载源）；或
+   - 使用仓库自带脚本从固定 commit 一键编译（如需 Vulkan GPU 加速，先安装 `libvulkan-dev glslc glslang-tools`；支持 `GGML_VULKAN=AUTO|ON|OFF` 与 `GGML_NATIVE=ON|OFF`）：
+     ```bash
+     ./scripts/build_llama_server.sh
+     ```
+2. 选中 **Hy-MT2-1.8B 2bit · Q2_0C（约 573 MB）**（或自定义 `.gguf`），按网络环境选择 `HuggingFace` 或 `HF-Mirror` 镜像下载模型并启动服务。
+3. 推理后端默认为 **`auto`**（优先尝试 Vulkan GPU 加速，无可用 GPU 时自动回退 CPU），也可手动指定 `vulkan` 或 `cpu`。
+4. 在线大模型与标准翻译接口（**Google Free / DeepL / OpenAI 兼容 / Ollama**）及本地离线词库保持完整独立，可随时切换搭配。
 
 ---
 
@@ -181,4 +189,4 @@ ShadowBar 会自动兼容扫描 `~/.local/share/shadowbar/` 下的默认词库�
 
 - **Wayland 下不触发后台剪贴板监听**：检查终端是否可执行 `wl-paste --version` 并确认 `watch_clipboard = true`。
 - **用户目录安装后 Fcitx5 配置里看不到 ShadowBar**：检查环境变量 `FCITX_ADDON_DIRS` 是否包含 `~/.local/lib/fcitx5`，并执行 `./scripts/restart_fcitx5.sh`。
-- **本地混元 HY-MT1.5 开启 Vulkan 失败**：将推理后端切回 `auto`（自动回退 CPU）或用 `vulkaninfo` 检查显卡驱动与 Vulkan ICD。
+- **本地混元 Hy-MT2 开启 Vulkan 失败**：将推理后端切回 `auto`（自动回退 CPU）或用 `vulkaninfo` 检查显卡驱动与 Vulkan ICD。

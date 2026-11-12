@@ -30,9 +30,10 @@ License Scope (Dual Non-Commercial Licensing)
    - Dynamic system dependencies retain their respective upstream licenses
      (Fcitx5: LGPL-2.1-or-later; Qt6: LGPL-3.0-only; libcurl: curl license;
      nlohmann_json: MIT; SQLite3: blessing/public-domain; zlib: Zlib).
-   - No large LLM weights (e.g., Hunyuan HY-MT1.5 GGUF) or third-party
-     dictionary databases (e.g., ECDICT, CC-CEDICT, StarDict packs) are
-     bundled in this repository. When downloading or importing external models
+   - No large LLM weights (e.g., Hunyuan Hy-MT2 GGUF), third-party dictionary
+     databases (e.g., ECDICT, CC-CEDICT, StarDict packs), or prebuilt
+     `llama-server` binaries (`llama.cpp` [MIT]) are bundled in this repository
+     or `.deb` package. When downloading or building external engines, models,
      or dictionaries locally, users remain responsible for complying with each
      upstream resource's license terms.
 

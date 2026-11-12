@@ -1,13 +1,14 @@
 # fcitx5-shadowbar
 
 [![CI Build & Deb](https://github.com/ang-XWBWZ/fcitx5-shadowbar/actions/workflows/ci-deb.yml/badge.svg)](https://github.com/ang-XWBWZ/fcitx5-shadowbar/actions/workflows/ci-deb.yml)
+[![最新发布版本](https://img.shields.io/github/v/release/ang-XWBWZ/fcitx5-shadowbar?label=Release)](https://github.com/ang-XWBWZ/fcitx5-shadowbar/releases/latest)
 [![代码协议: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/Code%20License-PolyForm--Noncommercial--1.0.0-orange.svg)](LICENSES/PolyForm-Noncommercial-1.0.0.txt)
 [![文档协议: CC BY-NC-SA 4.0](https://img.shields.io/badge/Docs%20License-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSES/CC-BY-NC-SA-4.0.txt)
 
 **语言：** [English](README.md) | 简体中文
 
 **面向 Linux（Wayland / X11）的双形态实时翻译工具：Fcitx5 行内伴随翻译 + Qt6 独立翻译弹窗（`shadowbar-float`）。**  
-打字时无缝同步出译文，复制/阅读时一秒弹窗互译；支持 **20 种语言**、**云端 AI 与在线翻译**、**本地混元 `HY-MT1.5`（1.25bit / 2bit）推理** 与 **多格式毫秒级离线词库**。
+打字时无缝同步出译文，复制/阅读时一秒弹窗互译；支持 **20 种语言**、**云端 AI 与标准翻译 API**、**本地混元 `Hy-MT2-1.8B`（`2bit` Q2_0C）推理** 与 **多格式毫秒级离线词库**。
 
 > **开源非商用授权：** 源码与脚本使用 [PolyForm Noncommercial License 1.0.0](LICENSES/PolyForm-Noncommercial-1.0.0.txt)，文档与配置示例使用 [CC BY-NC-SA 4.0](LICENSES/CC-BY-NC-SA-4.0.txt)。详见 [LICENSE](LICENSE)。
 
@@ -69,8 +70,10 @@ ShadowBar 内建统一翻译调度引擎（`core/`），可自由组合在线 AP
 | --- | --- | --- |
 | **云端大模型 / API** | OpenAI 兼容接口（DeepSeek / GPT / 自定义）、DeepL、Ollama | 支持自定义 `Prompt` 预设（直译 / 自然 / 职场 / 学术），自动异步防抖 |
 | **免配置在线引擎** | Google Free | 开箱即用、无需 API Key，支持 20 语种自动识别互译 |
-| **本地轻量 AI 模型** | **腾讯混元 `HY-MT1.5-1.8B`**（`1.25bit` ~441MB / `2bit` ~573MB / 自定义 `.gguf`） | 设置页内置 `HuggingFace` / `HF-Mirror` 下载、单槽低开销 `llama-server` 启停（默认 `auto` 优先 Vulkan、回退 CPU）与 **长时间空闲自动卸载 / 按需秒拉起** |
+| **本地轻量 AI 模型** | **腾讯混元 `Hy-MT2-1.8B`**（`2bit` Q2_0C ~573MB / 自定义 `.gguf`） | 设置页内置 `HuggingFace` / `HF-Mirror` 下载、支持一键下载预编译 `Q2_0C+Vulkan` 引擎或执行 [`scripts/build_llama_server.sh`](scripts/build_llama_server.sh) 自编译（默认 `auto` 优先 Vulkan、回退 CPU）与 **空闲自动卸载 / 按需秒拉起** |
 | **毫秒级本地离线词库** | ECDICT（`.db`/`.sqlite`/`.csv`）、StarDict（`.ifo`/`.idx`/`.dict.dz`）、CC-CEDICT（`.u8`）、JSON/JSONL、TSV | 断网兜底 + 单词短语瞬时响应；支持多语种外部词典同时挂载与优先级配置 |
+
+> **专版 `llama-server` 引擎说明**：`Hy-MT2-1.8B-2Bit.gguf` 采用 `Q2_0C` 量化与 `hunyuan-dense` 架构（上游分支 `sjl623/llama.cpp` PR #22836，固定 commit `1e411d8`）。为保持仓库与主 `.deb` 包轻量（`< 1 MB`），推理引擎通过 CI 产物 [`shadowbar-llama-server-linux-amd64.tar.gz`](.github/workflows/ci-deb.yml) 分发（设置页点击 **`⬇ 下载引擎`** 自动安装至 `~/.local/share/shadowbar/bin/llama-server`），或运行 [`scripts/build_llama_server.sh`](scripts/build_llama_server.sh) 本地编译（支持 Vulkan GPU + CPU 回退；在 Ryzen AI 9 H 365 / Radeon 880M 实测 Vulkan 平均 **~0.40 秒/句**，CPU **~0.52 秒/句**）。
 
 **统一支持 20 种常用语言（加 `auto` 自动检测）**：`en`、`zh`、`zh-TW`、`ja`、`ko`、`fr`、`de`、`es`、`pt`、`ru`、`it`、`ar`、`th`、`vi`、`id`、`hi`、`nl`、`pl`、`tr`、`uk`。
 
@@ -91,6 +94,8 @@ ShadowBar 内建统一翻译调度引擎（`core/`），可自由组合在线 AP
 
 ## 🚀 快速开始
 
+> 可直接在 **[GitHub Releases](https://github.com/ang-XWBWZ/fcitx5-shadowbar/releases/latest)** 下载 Ubuntu 24.04 / Debian 12 & 13 的 `.deb` 安装包以及配套的 `shadowbar-llama-server-linux-amd64.tar.gz` 引擎；若从源码构建安装：
+
 ```bash
 git clone https://github.com/ang-XWBWZ/fcitx5-shadowbar.git
 cd fcitx5-shadowbar
@@ -101,14 +106,16 @@ ctest --test-dir build --output-on-failure -V
 
 # 用户级安装到 ~/.local（无需 root）
 ./scripts/install_user.sh
+# 或一步连同专版 Q2_0C + Vulkan llama-server 引擎一起安装：
+# ./scripts/install_user.sh --with-llama-server
 
-# 打开设置与翻译弹窗（内含 API 预设、腾讯混元 HY-MT1.5 本地模型、词典导入与新主机中文环境一键修复）
+# 打开设置与翻译弹窗（内含 API 预设、腾讯混元 Hy-MT2-1.8B 本地模型、词典导入与新主机中文环境一键修复）
 shadowbar-float --settings
 ```
 
 > **新 Linux 主机冷启动提示：** 打开 `shadowbar-float --settings` 第 4 标签页 **「中文环境修复」** 可一键补齐 Arch / Debian / Ubuntu / Fedora / openSUSE 的 Fcitx5 组件、简体优先等宽字体回退、输入法配置以及 Wayland / X11 环境变量。
 
-完整发行版依赖、`.deb` 打包、本地 HY-MT1.5 与多语种词库配置步骤请参阅 **[docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)**（[English Guide](docs/INSTALL.md)）。无需重启 Fcitx5 也可先运行 `./build/cli-sim/shadowbar-sim` 在终端体验核心翻译流水线。
+完整发行版依赖、`.deb` 打包、本地 `Hy-MT2-1.8B` / `llama-server` 与多语种词库配置步骤请参阅 **[docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)**（[English Guide](docs/INSTALL.md)）。无需重启 Fcitx5 也可先运行 `./build/cli-sim/shadowbar-sim` 在终端体验核心翻译流水线。
 
 ---
 
@@ -117,11 +124,11 @@ shadowbar-float --settings
 | 路径 | 职责说明 | 授权协议 |
 | --- | --- | --- |
 | `core/` | C++20 核心翻译引擎、会话状态机、20 语种路由、TOML 热重载配置、智能分句与多格式离线词库 | `PolyForm-Noncommercial-1.0.0` |
-| `floating-ui/` | `shadowbar-float` Qt6 翻译弹窗、桌面悬浮球、Wayland/X11 剪贴板监听、腾讯混元 HY-MT1.5 模型管家与中文环境修复 | `PolyForm-Noncommercial-1.0.0` |
+| `floating-ui/` | `shadowbar-float` Qt6 翻译弹窗、桌面悬浮球、Wayland/X11 剪贴板监听、腾讯混元 Hy-MT2 模型管家与中文环境修复 | `PolyForm-Noncommercial-1.0.0` |
 | `fcitx5-addon/` | `libshadowbar.so` 伴随翻译插件、`libshadowbarim.so` 虚拟输入法及配置描述 | `PolyForm-Noncommercial-1.0.0` |
 | `cli-sim/` | `shadowbar-sim` 独立命令行沙盒模拟器 | `PolyForm-Noncommercial-1.0.0` |
 | `tests/` | CTest 单元与集成测试（`test_core`、`test_fcitx5_integration`、`test_floating_ui_helpers`） | `PolyForm-Noncommercial-1.0.0` |
-| `scripts/`、`debian/` | 安装/重启脚本与 Debian `.deb` 打包规则 | `PolyForm-Noncommercial-1.0.0` |
+| `scripts/`、`debian/` | 安装/重启/引擎编译脚本（`build_llama_server.sh`）与 Debian `.deb` 打包规则 | `PolyForm-Noncommercial-1.0.0` |
 | `docs/`、`config/config.toml.example` | 中英文安装指南与配置模板（`~/.config/shadowbar/config.toml`） | `CC-BY-NC-SA-4.0` |
 | `LICENSES/` | 完整双非商用协议官方原文 | — |
 

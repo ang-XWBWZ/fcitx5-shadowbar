@@ -17,7 +17,7 @@
 
 namespace shadowbar::floating_ui {
 
-/// Manages local `llama-server` process lifecycle and GGUF model downloads for HY-MT1.5.
+/// Manages local `llama-server` process lifecycle and GGUF model/engine downloads for Hy-MT2.
 class TyModelManager final : public QObject {
     Q_OBJECT
 
@@ -75,10 +75,14 @@ public:
     void endTranslationActivity();
     int activeRequests() const { return active_requests_; }
 
-    /// Downloads official HY-MT1.5 GGUF variant using `curl` into `dest_path`.
+    /// Downloads official Hy-MT2-1.8B GGUF variant using `curl` into `dest_path`.
     bool startDownload(const QString &variant,
                        const QString &mirror,
                        const QString &dest_path);
+
+    /// Downloads prebuilt `llama-server` archive from GitHub Releases and installs to `dest_bin_path`.
+    bool startEngineDownload(const QString &mirror,
+                             const QString &dest_bin_path);
 
     /// Cancels an active GGUF download and removes partial files.
     void cancelDownload();
@@ -113,6 +117,10 @@ private:
     void scheduleIdleUnloadTimer(qint64 delay_ms = -1);
     void onIdleTimerFired();
     void unloadForIdle();
+    bool startCurlDownload(const QString &tag,
+                           const QString &url,
+                           const QString &dest_path,
+                           bool extract_engine_tar);
 
     QProcess *server_proc_ = nullptr;
     QByteArray server_stdout_buf_;
@@ -136,6 +144,7 @@ private:
     bool vulkan_device_seen_ = false;
     bool using_vulkan_ = false;
     bool no_vulkan_seen_ = false;
+    bool unsupported_format_seen_ = false;
     bool fallback_attempted_ = false;
     QString status_message_ = QStringLiteral("未运行");
     QStringList log_lines_;
@@ -158,6 +167,7 @@ private:
     QString download_part_path_;
     QByteArray download_stderr_buf_;
     bool download_cancelled_ = false;
+    bool download_is_tar_ = false;
 };
 
 } // namespace shadowbar::floating_ui

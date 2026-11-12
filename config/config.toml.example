@@ -50,14 +50,16 @@ font_scale = 100
 segment_max_chars = 500
 
 [hymt]
-# Local Hunyuan HY-MT1.5-1.8B GGUF runtime (managed via Tab 3 in shadowbar-float --settings)
-variant = "2bit"         # "1.25bit", "2bit", or "custom"
+# Local Hunyuan Hy-MT2-1.8B (2bit Q2_0C) GGUF runtime (managed via Tab 3 in shadowbar-float --settings).
+# Requires llama-server built with Q2_0C + hunyuan-dense (sjl623/llama.cpp @ 1e411d8, PR #22836);
+# click "⬇ 下载引擎" in Settings or run ./scripts/build_llama_server.sh to install it.
+variant = "2bit"         # "2bit" (default Hy-MT2-1.8B 2bit Q2_0C) or "custom"
 backend = "auto"         # "auto" (Vulkan GPU preferred, CPU fallback), "vulkan", or "cpu"
 port = 18081
 threads = 0              # 0 = auto CPU core count
+idle_unload_sec = 300    # Auto-unload local llama-server after idle seconds (0 = keep resident)
 mirror = "huggingface"   # "huggingface" or "hf-mirror"
-server_path = ""
-model_125bit_path = ""
+server_path = ""         # Optional custom llama-server path (default: ~/.local/share/shadowbar/bin/llama-server)
 model_2bit_path = ""
 custom_model_path = ""
 auto_start = true

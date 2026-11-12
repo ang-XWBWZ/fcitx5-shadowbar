@@ -34,10 +34,6 @@ bool isLoopbackHost(const QString &host) {
 
 QString normalizeTyVariant(const QString &variant) {
     const QString v = variant.trimmed().toLower();
-    if (v == QLatin1String("1.25bit") || v == QLatin1String("stq1_0") ||
-        v == QLatin1String("125bit")) {
-        return QStringLiteral("1.25bit");
-    }
     if (v == QLatin1String("custom")) {
         return QStringLiteral("custom");
     }
@@ -61,43 +57,29 @@ int tyBackendGpuLayers(const QString &backend) {
 
 TyModelSpec tyModelSpec(const QString &variant) {
     const QString norm = normalizeTyVariant(variant);
-    if (norm == QLatin1String("1.25bit")) {
-        return {
-            .id = QStringLiteral("1.25bit"),
-            .display_name = QStringLiteral("混元 HY-MT1.5-1.8B · 1.25bit (STQ1_0)"),
-            .size_hint = QStringLiteral("约 441 MB"),
-            .preset_id = QStringLiteral("ty_125bit"),
-            .preset_label = QStringLiteral("混元 HY-MT1.5 (1.25bit)"),
-            .model_name = QStringLiteral("hy-mt1.5-1.8b-1.25bit"),
-            .default_filename = QStringLiteral("Hy-MT1.5-1.8B-1.25bit.gguf"),
-            .repo_subpath = QStringLiteral(
-                "AngelSlim/Hy-MT1.5-1.8B-1.25bit-GGUF/resolve/main/"
-                "Hy-MT1.5-1.8B-1.25bit.gguf"),
-        };
-    }
     if (norm == QLatin1String("custom")) {
         return {
             .id = QStringLiteral("custom"),
-            .display_name = QStringLiteral("混元 HY-MT1.5 · 自定义本地 GGUF"),
+            .display_name = QStringLiteral("混元 Hy-MT2 · 自定义本地 GGUF"),
             .size_hint = QStringLiteral("本地文件"),
             .preset_id = QStringLiteral("ty_custom"),
-            .preset_label = QStringLiteral("混元 HY-MT1.5 (自定义)"),
-            .model_name = QStringLiteral("hy-mt1.5-custom"),
+            .preset_label = QStringLiteral("混元 Hy-MT2 (自定义)"),
+            .model_name = QStringLiteral("hy-mt2-custom"),
             .default_filename = {},
             .repo_subpath = {},
         };
     }
     return {
         .id = QStringLiteral("2bit"),
-        .display_name = QStringLiteral("混元 HY-MT1.5-1.8B · 2bit (Q2_0C)"),
+        .display_name = QStringLiteral("混元 Hy-MT2-1.8B · 2bit (Q2_0C)"),
         .size_hint = QStringLiteral("约 573 MB"),
         .preset_id = QStringLiteral("ty_2bit"),
-        .preset_label = QStringLiteral("混元 HY-MT1.5 (2bit)"),
-        .model_name = QStringLiteral("hy-mt1.5-1.8b-2bit"),
-        .default_filename = QStringLiteral("Hy-MT1.5-1.8B-2bit.gguf"),
+        .preset_label = QStringLiteral("混元 Hy-MT2 (2bit)"),
+        .model_name = QStringLiteral("hy-mt2-1.8b-2bit"),
+        .default_filename = QStringLiteral("Hy-MT2-1.8B-2Bit.gguf"),
         .repo_subpath = QStringLiteral(
-            "AngelSlim/Hy-MT1.5-1.8B-2bit-GGUF/resolve/main/"
-            "Hy-MT1.5-1.8B-2bit.gguf"),
+            "tencent/Hy-MT2-1.8B-2Bit-GGUF/resolve/main/"
+            "Hy-MT2-1.8B-2Bit.gguf"),
     };
 }
 
@@ -114,12 +96,31 @@ QString tyDownloadUrl(const QString &variant, const QString &mirror) {
     return host + spec.repo_subpath;
 }
 
+QString tyEngineDownloadUrl(const QString &) {
+    const QByteArray override_url = qgetenv("SHADOWBAR_ENGINE_URL");
+    if (!override_url.trimmed().isEmpty()) {
+        return QString::fromUtf8(override_url.trimmed());
+    }
+    return QStringLiteral(
+        "https://github.com/ang-XWBWZ/fcitx5-shadowbar/releases/latest/"
+        "download/shadowbar-llama-server-linux-amd64.tar.gz");
+}
+
+QString tyEngineRequirementSummary() {
+    return QStringLiteral(
+        "专版引擎: sjl623/llama.cpp @ 1e411d8 (PR #22836，支持 Q2_0C + hunyuan-dense + Vulkan GPU)");
+}
+
 QString defaultShadowbarShareDir() {
     const QByteArray xdg_data = qgetenv("XDG_DATA_HOME");
     if (!xdg_data.trimmed().isEmpty()) {
         return QDir::cleanPath(QString::fromUtf8(xdg_data) + QStringLiteral("/shadowbar"));
     }
     return QDir::homePath() + QStringLiteral("/.local/share/shadowbar");
+}
+
+QString defaultTyServerInstallPath() {
+    return defaultShadowbarShareDir() + QStringLiteral("/bin/llama-server");
 }
 
 QString defaultTyModelPath(const QString &variant) {
@@ -132,10 +133,6 @@ QString defaultTyModelPath(const QString &variant) {
 
 QString resolvedTyModelPath(const ShadowConfig &cfg, const QString &variant) {
     const QString norm = normalizeTyVariant(variant);
-    if (norm == QLatin1String("1.25bit")) {
-        const QString custom = QString::fromStdString(cfg.hymt_model_125bit_path).trimmed();
-        return custom.isEmpty() ? defaultTyModelPath(norm) : custom;
-    }
     if (norm == QLatin1String("custom")) {
         return QString::fromStdString(cfg.hymt_custom_model_path).trimmed();
     }
@@ -310,17 +307,16 @@ QString inferTyVariantForPreset(const Preset &preset, int port) {
         return {};
     }
     const QString model_lower = QString::fromStdString(preset.model).trimmed().toLower();
-    if (model_lower.contains(QLatin1String("1.25bit")) ||
-        model_lower.contains(QLatin1String("125bit")) ||
-        model_lower.contains(QLatin1String("stq1"))) {
-        return QStringLiteral("1.25bit");
-    }
-    if (model_lower.contains(QLatin1String("2bit")) ||
-        model_lower.contains(QLatin1String("q2_0c"))) {
-        return QStringLiteral("2bit");
-    }
     if (model_lower.contains(QLatin1String("custom"))) {
         return QStringLiteral("custom");
+    }
+    if (model_lower.contains(QLatin1String("2bit")) ||
+        model_lower.contains(QLatin1String("1.25bit")) ||
+        model_lower.contains(QLatin1String("125bit")) ||
+        model_lower.contains(QLatin1String("stq1")) ||
+        model_lower.contains(QLatin1String("q2_0c")) ||
+        model_lower.contains(QLatin1String("hy-mt"))) {
+        return QStringLiteral("2bit");
     }
     return {};
 }
@@ -337,6 +333,14 @@ TyServerLogSignal inspectTyServerLogLine(const QString &line) {
         trimmed.contains(QLatin1String("No Vulkan devices found"), Qt::CaseInsensitive) ||
         trimmed.contains(QLatin1String("Vulkan initialization failed"), Qt::CaseInsensitive)) {
         sig.no_vulkan_device = true;
+    }
+
+    if (trimmed.contains(QLatin1String("unknown tensor type"), Qt::CaseInsensitive) ||
+        trimmed.contains(QLatin1String("invalid tensor type"), Qt::CaseInsensitive) ||
+        trimmed.contains(QLatin1String("unsupported tensor type"), Qt::CaseInsensitive) ||
+        trimmed.contains(QLatin1String("unknown model architecture"), Qt::CaseInsensitive) ||
+        trimmed.contains(QLatin1String("unknown architecture"), Qt::CaseInsensitive)) {
+        sig.unsupported_model_format = true;
     }
 
     if ((trimmed.contains(QLatin1String("ggml_vulkan: Found")) &&

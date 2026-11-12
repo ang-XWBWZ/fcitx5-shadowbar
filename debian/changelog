@@ -1,3 +1,18 @@
+fcitx5-shadowbar (0.1.3-1) unstable; urgency=medium
+
+  * Upgrade built-in local AI translation model to Hunyuan Hy-MT2-1.8B (2bit Q2_0C):
+    - Replace legacy 1.25bit preset with Hy-MT2-1.8B-2Bit while keeping custom
+      local GGUF paths, online LLMs, DeepL/Google Free APIs, and offline dicts
+    - Auto-migrate legacy `variant = "1.25bit"` TOML configurations cleanly
+  * Add patched llama-server (sjl623/llama.cpp@1e411d8, PR #22836) tooling:
+    - Add scripts/build_llama_server.sh (Q2_0C + hunyuan-dense + Vulkan/CPU,
+      with --prebuilt fallback) and --with-llama-server installer options
+    - Add UI one-click engine downloader (`⬇ 下载引擎`), clear format
+      incompatibility diagnostics, and CI Release packaging for
+      shadowbar-llama-server-linux-amd64.tar.gz
+
+ -- ang <ang-XWBWZ@users.noreply.github.com>  Thu, 12 Nov 2026 04:59:15 -0500
+
 fcitx5-shadowbar (0.1.2-1) unstable; urgency=medium
 
   * Fix crash on startup in Qt6 floating UI (`OpaquePopupEventFilter`):

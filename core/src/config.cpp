@@ -659,8 +659,10 @@ bool ConfigManager::parseToml(std::string_view content, ShadowConfig &out,
             }
         } else if (current_section == "hymt") {
             if (key == "variant" && parseTomlValueString(val_raw, val_str)) {
-                if (val_str == "1.25bit" || val_str == "2bit" || val_str == "custom") {
-                    out.hymt_variant = val_str;
+                if (val_str == "custom") {
+                    out.hymt_variant = "custom";
+                } else if (val_str == "2bit" || val_str == "1.25bit") {
+                    out.hymt_variant = "2bit";
                 }
             } else if (key == "backend" && parseTomlValueString(val_raw, val_str)) {
                 if (val_str == "auto" || val_str == "vulkan" || val_str == "cpu") {
@@ -819,8 +821,10 @@ std::string ConfigManager::serializeToml(const ShadowConfig &cfg) {
     out << "idle_unload_sec = " << std::clamp(cfg.hymt_idle_unload_sec, 0, 86400) << "\n";
     out << "mirror = \"" << escapeTomlString(cfg.hymt_mirror) << "\"\n";
     out << "server_path = \"" << escapeTomlString(cfg.hymt_server_path) << "\"\n";
-    out << "model_125bit_path = \"" << escapeTomlString(cfg.hymt_model_125bit_path)
-        << "\"\n";
+    if (!cfg.hymt_model_125bit_path.empty()) {
+        out << "model_125bit_path = \""
+            << escapeTomlString(cfg.hymt_model_125bit_path) << "\"\n";
+    }
     out << "model_2bit_path = \"" << escapeTomlString(cfg.hymt_model_2bit_path)
         << "\"\n";
     out << "custom_model_path = \"" << escapeTomlString(cfg.hymt_custom_model_path)
