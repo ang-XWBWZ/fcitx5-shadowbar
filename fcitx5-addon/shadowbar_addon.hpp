@@ -97,8 +97,9 @@ FCITX_CONFIGURATION(
         this, "FloatingShowOrb", "显示桌面迷你悬浮球 (点击展开悬浮窗)", false};);
 
 struct ShadowBarICState : public fcitx::InputContextProperty {
-    explicit ShadowBarICState(ShadowConfig cfg) : session(std::move(cfg)) {}
+    explicit ShadowBarICState(ShadowConfig cfg);
 
+    uint64_t session_id = 0;
     ShadowSession session;
     std::unique_ptr<fcitx::EventSourceTime> prefix_timer;
     uint64_t last_panel_revision = 0;
@@ -160,7 +161,7 @@ private:
     void onKeyEventPost(fcitx::KeyEvent &event);
     void onCommitFilter(fcitx::InputContext *ic, std::string &orig);
     void onUpdateUI(fcitx::InputContextUpdateUIEvent &event);
-    void onFocusOutOrReset(fcitx::InputContext *ic);
+    void onFocusOutOrReset(fcitx::InputContext *ic, bool is_reset);
 
     void handleSessionActions(fcitx::InputContext *ic,
                               ShadowBarICState *state,

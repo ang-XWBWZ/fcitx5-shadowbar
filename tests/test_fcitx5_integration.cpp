@@ -374,6 +374,46 @@ int main() {
                    std::string::npos);
             assert(ic2->inputPanel().auxUp().toString().find("自然离线") !=
                    std::string::npos);
+
+            // Test 6: Focus loss object cleanup & cross-session isolation
+            // 6.1: When window2 (in OneShot mode via ";;") loses focus, its panel MUST immediately close and OneShot must exit
+            ic2->focusOut();
+            assertNoActiveTranslationBar(ic2);
+
+            // Refocusing window2 must stay clean Off without zombie OneShot state
+            ic2->focusIn();
+            assertNoActiveTranslationBar(ic2);
+            ic2->focusOut();
+
+            // 6.2: Switch focus back to window1 (ic has Sticky active from Test 4).
+            // Input 'b' -> Pinyin commits "测试", ShadowBar intercepts it.
+            ic->focusIn();
+            instance.setCurrentInputMethod(ic, "testim", true);
+            testfrontend->call<fcitx::ITestFrontend::pushCommitExpectation>("");
+            assert(sendTestKey(testfrontend, uuid, fcitx::Key(FcitxKey_b), true));
+            assert(ic->inputPanel().auxUp().toString().find("测试") != std::string::npos);
+
+            // 6.3: While window1 is showing translation, window1 loses focus -> panel MUST immediately close!
+            ic->focusOut();
+            assertNoActiveTranslationBar(ic);
+
+            // 6.4: Window2 gains focus, triggers ";;" independently without interference
+            ic2->focusIn();
+            assert(sendTestKey(testfrontend, uuid2,
+                               fcitx::Key(FcitxKey_semicolon), true));
+            assert(sendTestKey(testfrontend, uuid2,
+                               fcitx::Key(FcitxKey_semicolon), true));
+            assert(ic2->inputPanel().auxUp().toString().find("请输入") != std::string::npos);
+            ic2->focusOut();
+            assertNoActiveTranslationBar(ic2);
+
+            // 6.5: Window1 refocuses -> its Sticky translation panel re-appears cleanly
+            ic->focusIn();
+            assert(ic->inputPanel().auxUp().toString().find("测试") != std::string::npos);
+            assert(sendTestKey(testfrontend, uuid,
+                               fcitx::Key("Control+Shift+T"), true)); // Turn Sticky off
+            assertNoActiveTranslationBar(ic);
+
             testfrontend->call<fcitx::ITestFrontend::destroyInputContext>(uuid2);
 
             testfrontend->call<fcitx::ITestFrontend::destroyInputContext>(uuid);

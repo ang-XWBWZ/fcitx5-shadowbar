@@ -2,6 +2,26 @@
 
 All notable changes to **fcitx5-shadowbar** are documented in this file.
 
+## [0.1.4] - 2026-11-13
+
+### Multi-Window Translation Isolation & Focus-Loss UI Cleanup
+
+- **Per-Session Translation Queue & Cancellation (`AsyncTranslationEngine`)**
+  - Added unique `session_id` tagging for each input context window.
+  - Multi-window concurrent translation submissions, debouncing, revisions, and worker job queues are now completely isolated per session, preventing one window's typing from canceling or overwriting an in-flight translation job of another window.
+  - Added `cancelSession(session_id)` to cancel pending/in-flight jobs specifically for an input context without affecting other open windows or concurrent requests.
+
+- **Focus-Aware UI Rendering & Overwrite Prevention (`fcitx5-addon`)**
+  - Asynchronous translation callbacks now verify `target_ic->hasFocus()` before updating candidate panels or auxiliary text (`updateUserInterface(InputPanel)`), preventing background completions from popping up over or stealing the UI of the currently active window.
+  - Fixed a logic bug in `renderPanel` where `force_clear = true` was bypassed if `shouldShowBarForPanel()` returned true; forced panel dismissal now clears candidate/auxiliary lists immediately.
+
+- **Strict Focus-Out & Reset Lifecycle Cleanup**
+  - When an input context loses focus (`FocusOut`) or experiences an application caret relocation/cancel event (`Reset`):
+    - In-flight background translations for that session are cancelled immediately.
+    - Transient `OneShot` translation mode automatically exits to `Off` to prevent lingering zombie states when refocusing.
+    - `Sticky` mode input drafts are safely cleared upon application-driven `Reset`.
+    - Companion bar and candidate lists are closed immediately from the screen (`force_clear = true, notify_ui = true`).
+
 ## [0.1.3] - 2026-11-12
 
 ### Highlights: Hunyuan `Hy-MT2-1.8B (2bit)` & Patched `llama-server` Packaging

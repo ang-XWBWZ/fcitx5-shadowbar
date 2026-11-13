@@ -11,6 +11,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -48,6 +49,7 @@ HttpResponse curlHttpTransport(const HttpRequest &req,
 
 /// Request payload dispatched to AsyncTranslationEngine.
 struct TranslationJob {
+    uint64_t session_id = 0;
     uint64_t revision = 0;
     std::string source_text;
     std::string source_lang = "zh";
@@ -97,6 +99,9 @@ public:
     /// or asynchronously from the lazy worker thread after debounce.
     void submit(TranslationJob job, UpdateCallback on_update);
 
+    /// Cancels any pending or in-flight request for a specific session without affecting others.
+    void cancelSession(uint64_t session_id);
+
     /// Cancels any pending or in-flight request without shutting down the engine.
     void cancelAll();
 
@@ -126,11 +131,10 @@ private:
     mutable std::mutex mu_;
     std::condition_variable cv_;
     bool stop_ = false;
-    bool has_pending_ = false;
     bool worker_running_ = false;
-    PendingJob pending_;
-    uint64_t latest_revision_ = 0;
-    std::shared_ptr<std::atomic<bool>> current_cancel_;
+    std::unordered_map<uint64_t, PendingJob> pending_jobs_;
+    std::unordered_map<uint64_t, uint64_t> latest_revisions_;
+    std::unordered_map<uint64_t, std::shared_ptr<std::atomic<bool>>> active_cancels_;
     std::thread worker_;
 };
 

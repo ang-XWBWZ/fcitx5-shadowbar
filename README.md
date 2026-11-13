@@ -58,6 +58,7 @@ Attach a non-blocking live translation overlay right next to Pinyin/Wubi preedit
 
 - **One-Shot (`;;`)**: Type `;;` mid-typing to translate the next phrase and automatically return to normal input after commit/cancel.
 - **Sticky (`Control+Shift+T`) & Virtual IM (`ShadowBar`)**: Stay in live bilingual translation mode across sentences or add `ShadowBar` directly as an input method in Fcitx5.
+- **Multi-Window Isolation & Focus Protection**: Independent asynchronous translation queues per window; background completions for unfocused windows never steal active UI, and floating companion panels close cleanly upon focus loss or caret reset.
 - **Instant Shortcuts**: `Alt+Shift+L` cycles target languages (default `["en", "zh", "ja"]`), `Alt+Shift+P` cycles style/provider presets, `Enter` commits the translation, and `Shift+Enter` commits the original text.
 
 ---

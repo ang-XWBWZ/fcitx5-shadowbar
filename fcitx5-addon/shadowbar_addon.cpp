@@ -254,6 +254,12 @@ void ShadowBarToggleAction::activate(fcitx::InputContext *ic) {
     addon_->toggleStickyFromAction(ic);
 }
 
+static std::atomic<uint64_t> s_session_counter{1};
+
+ShadowBarICState::ShadowBarICState(ShadowConfig cfg)
+    : session_id(s_session_counter.fetch_add(1, std::memory_order_relaxed)),
+      session(std::move(cfg)) {}
+
 ShadowBarAddon::ShadowBarAddon(fcitx::Instance *instance)
     : instance_(instance),
       main_thread_id_(std::this_thread::get_id()),
@@ -389,7 +395,7 @@ ShadowBarAddon::ShadowBarAddon(fcitx::Instance *instance)
                               fcitx::EventWatcherPhase::Default,
                               [this](fcitx::Event &event) {
                                   auto &ev = static_cast<fcitx::FocusOutEvent &>(event);
-                                  onFocusOutOrReset(ev.inputContext());
+                                  onFocusOutOrReset(ev.inputContext(), false);
                               }));
 
     event_watchers_.emplace_back(
@@ -397,7 +403,7 @@ ShadowBarAddon::ShadowBarAddon(fcitx::Instance *instance)
                               fcitx::EventWatcherPhase::Default,
                               [this](fcitx::Event &event) {
                                   auto &ev = static_cast<fcitx::ResetEvent &>(event);
-                                  onFocusOutOrReset(ev.inputContext());
+                                  onFocusOutOrReset(ev.inputContext(), true);
                               }));
 }
 
@@ -1045,7 +1051,7 @@ void ShadowBarAddon::renderPanel(fcitx::InputContext *ic,
     const ViewModel vm = state->session.viewModel();
     auto &panel = ic->inputPanel();
 
-    if (!shouldShowBarForPanel(ic, state)) {
+    if (force_clear || !shouldShowBarForPanel(ic, state)) {
         state->transient_expand = false;
         if (state->was_bar_visible || force_clear) {
             panel.setAuxUp(fcitx::Text());
@@ -1265,7 +1271,7 @@ void ShadowBarAddon::handleSessionActions(fcitx::InputContext *ic,
     }
 
     if (actions.cancel_translation) {
-        translator_.cancelAll();
+        translator_.cancelSession(state->session_id);
     }
     if (!actions.commit_to_app.empty()) {
         commitDirectToApp(ic, actions.commit_to_app);
@@ -1285,6 +1291,7 @@ void ShadowBarAddon::handleSessionActions(fcitx::InputContext *ic,
                 ? std::max(cfg.request_timeout_ms, 10000)
                 : cfg.request_timeout_ms;
         TranslationJob job{
+            .session_id = state->session_id,
             .revision = state->session.revision(),
             .source_text = vm.source_text,
             .source_lang = vm.effective_source_lang.empty()
@@ -1321,7 +1328,8 @@ void ShadowBarAddon::handleSessionActions(fcitx::InputContext *ic,
                         return;
                     }
                     if (ic_state->session.onTranslationUpdate(rev, res)) {
-                        renderPanel(target_ic, ic_state, false);
+                        const bool is_focused = target_ic->hasFocus();
+                        renderPanel(target_ic, ic_state, false, is_focused);
                     }
                 };
 
@@ -1578,7 +1586,7 @@ void ShadowBarAddon::onUpdateUI(fcitx::InputContextUpdateUIEvent &event) {
     renderPanel(ic, state, false, false);
 }
 
-void ShadowBarAddon::onFocusOutOrReset(fcitx::InputContext *ic) {
+void ShadowBarAddon::onFocusOutOrReset(fcitx::InputContext *ic, bool is_reset) {
     if (!ic) {
         return;
     }
@@ -1590,12 +1598,26 @@ void ShadowBarAddon::onFocusOutOrReset(fcitx::InputContext *ic) {
     if (state->session.hasPendingPrefix()) {
         auto act = state->session.flushPendingPrefixIfExpired(
             SteadyTimePoint::max());
-        (void)act;
+        if (!act.replay_raw_prefix.empty()) {
+            handleSessionActions(ic, state, act);
+        }
     }
-    if (state->session.mode() == Mode::OneShot &&
-        state->session.viewModel().source_text.empty()) {
+    translator_.cancelSession(state->session_id);
+
+    if (state->session.mode() == Mode::OneShot) {
         auto act = state->session.exitToOff();
         handleSessionActions(ic, state, act);
+    } else if (is_reset && state->session.mode() == Mode::Sticky) {
+        if (!state->session.viewModel().source_text.empty()) {
+            auto act = state->session.clearDraft();
+            handleSessionActions(ic, state, act);
+        }
+    }
+
+    if (state->was_bar_visible) {
+        renderPanel(ic, state, true, true);
+        state->was_bar_visible = false;
+        state->transient_expand = false;
     }
 }
 

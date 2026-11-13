@@ -1607,6 +1607,132 @@ void testEngineLifecycleAndSanitizeFastPath() {
     assert(!hyMtActivityStampPath().empty());
 }
 
+void testAsyncTranslationEngineMultiSession() {
+    std::atomic<int> req_count{0};
+    auto mock_transport = [&](const HttpRequest &,
+                              const std::atomic<bool> &cancel,
+                              HttpStreamChunkCallback) -> HttpResponse {
+        int n = ++req_count;
+        if (n == 1) {
+            for (int i = 0; i < 10; ++i) {
+                if (cancel.load(std::memory_order_relaxed)) {
+                    return {.status_code = 0, .body = "", .error_message = "cancelled", .cancelled = true};
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            return {.status_code = 200, .body = R"({"choices":[{"message":{"content":"Session 1 Output"}}]})", .error_message = "", .cancelled = false};
+        } else {
+            return {.status_code = 200, .body = R"({"choices":[{"message":{"content":"Session 2 Output"}}]})", .error_message = "", .cancelled = false};
+        }
+    };
+
+    AsyncTranslationEngine engine(mock_transport, 64, 50);
+    Preset p{
+        .id = "mock_p",
+        .provider = ProviderKind::OpenAICompatible,
+        .endpoint = "http://127.0.0.1:18081/v1",
+        .target_lang = "en",
+    };
+
+    std::mutex m;
+    std::condition_variable cv;
+    bool s1_done = false;
+    bool s2_done = false;
+    std::string s1_res;
+    std::string s2_res;
+
+    // Concurrently submit session 101 and session 102 with distinct session_id
+    engine.submit(
+        TranslationJob{
+            .session_id = 101,
+            .revision = 1,
+            .source_text = "Window 1 text",
+            .source_lang = "zh",
+            .preset = p,
+            .immediate = false,
+            .bypass_cache = true,
+            .debounce_ms = 10,
+            .timeout_ms = 1000,
+        },
+        [&](uint64_t, TranslationResult res) {
+            if (res.is_final) {
+                std::lock_guard<std::mutex> lk(m);
+                s1_done = true;
+                s1_res = res.translated_text;
+                cv.notify_all();
+            }
+        });
+
+    engine.submit(
+        TranslationJob{
+            .session_id = 102,
+            .revision = 1,
+            .source_text = "Window 2 text",
+            .source_lang = "zh",
+            .preset = p,
+            .immediate = false,
+            .bypass_cache = true,
+            .debounce_ms = 10,
+            .timeout_ms = 1000,
+        },
+        [&](uint64_t, TranslationResult res) {
+            if (res.is_final) {
+                std::lock_guard<std::mutex> lk(m);
+                s2_done = true;
+                s2_res = res.translated_text;
+                cv.notify_all();
+            }
+        });
+
+    {
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait_for(lk, std::chrono::seconds(2), [&] { return s1_done && s2_done; });
+        assert(s1_done && s1_res == "Session 1 Output");
+        assert(s2_done && s2_res == "Session 2 Output");
+    }
+
+    // Verify cancelSession isolation: cancelling session 103 does not cancel session 104
+    bool s4_done = false;
+    engine.submit(
+        TranslationJob{
+            .session_id = 103,
+            .revision = 1,
+            .source_text = "Cancel me",
+            .source_lang = "zh",
+            .preset = p,
+            .immediate = false,
+            .bypass_cache = true,
+            .debounce_ms = 50,
+        },
+        [&](uint64_t, TranslationResult) {});
+
+    engine.submit(
+        TranslationJob{
+            .session_id = 104,
+            .revision = 1,
+            .source_text = "Keep me",
+            .source_lang = "zh",
+            .preset = p,
+            .immediate = false,
+            .bypass_cache = true,
+            .debounce_ms = 10,
+        },
+        [&](uint64_t, TranslationResult res) {
+            if (res.is_final && res.ok) {
+                std::lock_guard<std::mutex> lk(m);
+                s4_done = true;
+                cv.notify_all();
+            }
+        });
+
+    engine.cancelSession(103);
+    {
+        std::unique_lock<std::mutex> lk(m);
+        cv.wait_for(lk, std::chrono::seconds(2), [&] { return s4_done; });
+        assert(s4_done);
+    }
+}
+
 int main() {
     testUtf8Helpers();
     testConfigTomlAndSecrets();
@@ -1620,6 +1746,7 @@ int main() {
     testHyMtPromptAndConfig();
     testMultilangAndDictFormats();
     testEngineLifecycleAndSanitizeFastPath();
+    testAsyncTranslationEngineMultiSession();
     std::cout << "ALL shadowbar_core tests PASSED.\n";
     return 0;
 }

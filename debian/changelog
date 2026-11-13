@@ -1,3 +1,17 @@
+fcitx5-shadowbar (0.1.4-1) unstable; urgency=medium
+
+  * Multi-session translation isolation & focus-loss cleanup:
+    - Add per-session ID tracking (`session_id`), debounce timers, and active
+      job cancellations in `AsyncTranslationEngine`, preventing concurrent
+      requests in different windows from canceling or colliding with each other.
+    - Check target input context focus before applying asynchronous UI updates,
+      preventing background completions from overwriting active window panels.
+    - Ensure immediate panel dismissal on `FocusOut` and `Reset` (`force_clear`),
+      auto-exit transient `OneShot` mode to avoid zombie states, and clear
+      `Sticky` preedit drafts upon application-driven caret resets.
+
+ -- ang <ang-XWBWZ@users.noreply.github.com>  Fri, 13 Nov 2026 05:30:00 -0500
+
 fcitx5-shadowbar (0.1.3-1) unstable; urgency=medium
 
   * Upgrade built-in local AI translation model to Hunyuan Hy-MT2-1.8B (2bit Q2_0C):

@@ -1777,12 +1777,31 @@ OfflineDictStats AsyncTranslationEngine::offlineDictStats() const {
     return offline_dict_.stats();
 }
 
+void AsyncTranslationEngine::cancelSession(uint64_t session_id) {
+    std::lock_guard<std::mutex> lock(mu_);
+    pending_jobs_.erase(session_id);
+    latest_revisions_[session_id]++;
+    auto it = active_cancels_.find(session_id);
+    if (it != active_cancels_.end()) {
+        if (it->second) {
+            it->second->store(true, std::memory_order_relaxed);
+        }
+        active_cancels_.erase(it);
+    }
+    cv_.notify_all();
+}
+
 void AsyncTranslationEngine::cancelAll() {
     std::lock_guard<std::mutex> lock(mu_);
-    ++latest_revision_;
-    has_pending_ = false;
-    if (current_cancel_) {
-        current_cancel_->store(true, std::memory_order_relaxed);
+    pending_jobs_.clear();
+    for (auto &pair : active_cancels_) {
+        if (pair.second) {
+            pair.second->store(true, std::memory_order_relaxed);
+        }
+    }
+    active_cancels_.clear();
+    for (auto &pair : latest_revisions_) {
+        pair.second++;
     }
     cv_.notify_all();
 }
@@ -1795,11 +1814,16 @@ void AsyncTranslationEngine::shutdown() {
             return;
         }
         stop_ = true;
-        has_pending_ = false;
+        pending_jobs_.clear();
         worker_running_ = false;
-        ++latest_revision_;
-        if (current_cancel_) {
-            current_cancel_->store(true, std::memory_order_relaxed);
+        for (auto &pair : active_cancels_) {
+            if (pair.second) {
+                pair.second->store(true, std::memory_order_relaxed);
+            }
+        }
+        active_cancels_.clear();
+        for (auto &pair : latest_revisions_) {
+            pair.second++;
         }
         to_join = std::move(worker_);
     }
@@ -1810,10 +1834,11 @@ void AsyncTranslationEngine::shutdown() {
 }
 
 void AsyncTranslationEngine::submit(TranslationJob job, UpdateCallback on_update) {
+    const uint64_t sid = job.session_id;
     // Synchronous fast path: single phrase hits cache or offline dictionary without scheduling network.
     const std::string trimmed = utf8::trim(job.source_text);
     if (trimmed.empty()) {
-        cancelAll();
+        cancelSession(sid);
         return;
     }
 
@@ -1821,15 +1846,7 @@ void AsyncTranslationEngine::submit(TranslationJob job, UpdateCallback on_update
     if (!job.bypass_cache) {
         if (auto cached =
                 cache_.get(cache_scope, job.preset.target_lang, trimmed)) {
-            {
-                std::lock_guard<std::mutex> lock(mu_);
-                latest_revision_ = job.revision;
-                has_pending_ = false;
-                if (current_cancel_) {
-                    current_cancel_->store(true, std::memory_order_relaxed);
-                }
-            }
-            cv_.notify_all();
+            cancelSession(sid);
             if (on_update) {
                 on_update(job.revision,
                           {.ok = true, .is_final = true, .translated_text = *cached});
@@ -1839,15 +1856,7 @@ void AsyncTranslationEngine::submit(TranslationJob job, UpdateCallback on_update
     }
 
     if (job.preset.provider == ProviderKind::Offline) {
-        {
-            std::lock_guard<std::mutex> lock(mu_);
-            latest_revision_ = job.revision;
-            has_pending_ = false;
-            if (current_cancel_) {
-                current_cancel_->store(true, std::memory_order_relaxed);
-            }
-        }
-        cv_.notify_all();
+        cancelSession(sid);
         if (on_update) {
             on_update(job.revision,
                       runOfflineLookup(offline_dict_, trimmed,
@@ -1863,18 +1872,20 @@ void AsyncTranslationEngine::submit(TranslationJob job, UpdateCallback on_update
         if (stop_) {
             return;
         }
-        latest_revision_ = job.revision;
-        if (current_cancel_) {
-            current_cancel_->store(true, std::memory_order_relaxed);
+        latest_revisions_[sid] = job.revision;
+        auto cancel_it = active_cancels_.find(sid);
+        if (cancel_it != active_cancels_.end()) {
+            if (cancel_it->second) {
+                cancel_it->second->store(true, std::memory_order_relaxed);
+            }
         }
         auto delay = job.immediate ? std::chrono::milliseconds(0)
                                    : std::chrono::milliseconds(job.debounce_ms);
-        pending_ = PendingJob{
+        pending_jobs_[sid] = PendingJob{
             .job = std::move(job),
             .callback = std::move(on_update),
             .execute_at = SteadyClock::now() + delay,
         };
-        has_pending_ = true;
         if (!worker_running_) {
             if (worker_.joinable()) {
                 retired_worker = std::move(worker_);
@@ -1892,48 +1903,85 @@ void AsyncTranslationEngine::submit(TranslationJob job, UpdateCallback on_update
 void AsyncTranslationEngine::workerLoop() {
     std::unique_lock<std::mutex> lock(mu_);
     while (!stop_) {
-        if (!has_pending_) {
+        if (pending_jobs_.empty()) {
             if (worker_idle_timeout_ms_ > 0) {
                 const bool woke = cv_.wait_for(
                     lock, std::chrono::milliseconds(worker_idle_timeout_ms_),
-                    [this]() { return stop_ || has_pending_; });
-                if (!woke && !stop_ && !has_pending_) {
+                    [this]() { return stop_ || !pending_jobs_.empty(); });
+                if (!woke && !stop_ && pending_jobs_.empty()) {
                     worker_running_ = false;
                     return;
                 }
             } else {
-                cv_.wait(lock, [this]() { return stop_ || has_pending_; });
+                cv_.wait(lock, [this]() { return stop_ || !pending_jobs_.empty(); });
             }
             continue;
         }
 
-        const auto deadline = pending_.execute_at;
-        const uint64_t scheduled_rev = pending_.job.revision;
+        // Find the pending job with earliest execute_at
+        auto earliest_it = pending_jobs_.begin();
+        for (auto it = std::next(pending_jobs_.begin()); it != pending_jobs_.end(); ++it) {
+            if (it->second.execute_at < earliest_it->second.execute_at) {
+                earliest_it = it;
+            }
+        }
+
+        const auto deadline = earliest_it->second.execute_at;
+        const uint64_t scheduled_sid = earliest_it->first;
+        const uint64_t scheduled_rev = earliest_it->second.job.revision;
         if (SteadyClock::now() < deadline) {
-            cv_.wait_until(lock, deadline, [this, scheduled_rev]() {
-                return stop_ || !has_pending_ || latest_revision_ != scheduled_rev;
+            cv_.wait_until(lock, deadline, [this, scheduled_sid, scheduled_rev]() {
+                if (stop_ || pending_jobs_.empty()) {
+                    return true;
+                }
+                auto it = pending_jobs_.find(scheduled_sid);
+                if (it == pending_jobs_.end() || it->second.job.revision != scheduled_rev) {
+                    return true;
+                }
+                for (const auto &p : pending_jobs_) {
+                    if (p.second.execute_at < it->second.execute_at) {
+                        return true;
+                    }
+                }
+                return false;
             });
             continue;
         }
 
-        PendingJob active = std::move(pending_);
-        has_pending_ = false;
+        earliest_it = pending_jobs_.find(scheduled_sid);
+        if (earliest_it == pending_jobs_.end() || earliest_it->second.job.revision != scheduled_rev) {
+            continue;
+        }
+
+        PendingJob active = std::move(earliest_it->second);
+        pending_jobs_.erase(earliest_it);
+
+        const uint64_t sid = active.job.session_id;
+        const uint64_t rev = active.job.revision;
+
+        auto rev_it = latest_revisions_.find(sid);
+        if (rev_it == latest_revisions_.end() || rev_it->second != rev) {
+            continue;
+        }
+
         auto cancel_flag = std::make_shared<std::atomic<bool>>(false);
-        current_cancel_ = cancel_flag;
+        active_cancels_[sid] = cancel_flag;
         lock.unlock();
 
         TranslationResult res = executeJob(active.job, active.callback, cancel_flag);
 
         lock.lock();
-        if (current_cancel_ == cancel_flag) {
-            current_cancel_.reset();
+        auto cancel_it = active_cancels_.find(sid);
+        if (cancel_it != active_cancels_.end() && cancel_it->second == cancel_flag) {
+            active_cancels_.erase(cancel_it);
         }
-        const bool still_latest = (!stop_ && active.job.revision == latest_revision_);
+        rev_it = latest_revisions_.find(sid);
+        const bool still_latest = (!stop_ && rev_it != latest_revisions_.end() && rev_it->second == rev);
         lock.unlock();
 
         if (still_latest && !cancel_flag->load(std::memory_order_relaxed) &&
             active.callback) {
-            active.callback(active.job.revision, res);
+            active.callback(rev, res);
         }
 
         lock.lock();
